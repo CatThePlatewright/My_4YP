@@ -1,3 +1,7 @@
+#= This is my first attempt on solving a simple, cardinality constrained problem.
+No upper bounds are calculated, i.e. the variables have not been rounded, due to an initial misunderstanding
+of the methodology. However, since it is an exhaustive search approach, it still produces the wanted 
+answer. Using recursion for depth-first traversal.  =#
 using JuMP, Gurobi, LinearAlgebra, Random
 model = Model(Gurobi.Optimizer)
 set_optimizer_attribute(model, "OutputFlag", 0)
