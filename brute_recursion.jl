@@ -8,11 +8,11 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 # model parameters
-n = 4
+#=n = 4
 k = 2
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
-c = rand(Float64,n)
+c = rand(Float64,n)=#
 
 
 function add_constraints(

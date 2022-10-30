@@ -64,7 +64,7 @@ function compute_ub(model::Model, optimizer, fixed_x_index, fix_value, relaxed_v
         set_normalized_rhs(con2[i], rounded_bounds[i])
     end
     # force the branching variables to fixed value
-    if ~isnothing(fixed_x_index) && ~isnothing(value)
+    if ~isnothing(fixed_x_index) && ~isnothing(fix_value)
         fix(x[fixed_x_index], fix_value; force = true)
     end
     
@@ -81,16 +81,17 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fixed_x is the
 branching variable to be set to fixed value"
-function compute_lb(model::Model, fixed_x_index, value::Float64)
+function compute_lb(model::Model, fixed_x_index, fix_value::Float64)
     x = model[:x]
-    fix(x[fixed_x_index], value; force = true) # overrides previous relaxed constraint
+    fix(x[fixed_x_index], fix_value; force = true) # overrides previous relaxed constraint
     optimize!(model)
     #TODO: write feasibility check function for this if-else
     if termination_status(model) == MOI.OPTIMAL
+        println("Values of relaxed solution ", value.(x))
         return objective_value(model), x
     else 
         println("Infeasible or unbounded problem for lb computation")
-        return Inf, x
+        return Inf, [Inf for _ in 1:length(x)]
     end
 end
 
@@ -101,7 +102,7 @@ end
 # model parameters
 optimizer = Gurobi.Optimizer
 n = 5
-k = 2
+k = 3
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
 c = rand(Float64,n)
@@ -119,8 +120,7 @@ if termination_status(base_model) == MOI.OPTIMAL
     # IMPORTANT: argument must be copy(model) to avoid overwriting relaxed constraint!
     ub, feasible_x=compute_ub(copy(base_model), optimizer, nothing, nothing, value.(base_model[:x]))
 else 
-    error("Infeasible or unbounded problem ")
-    # TODO: terminate/ close_node!
+    println("Infeasible or unbounded problem ")
 end
 # this is our root node of the binarytree
 root = BinaryNode(MyNodeData(base_model,feasible_x,[],[],lb,ub))
@@ -128,9 +128,9 @@ node = root
 ϵ = 0.00000001
 
 # 3) start branching
-while (root.data.ub-root.data.lb > ϵ) 
-#while node == root
+while (root.data.ub-root.data.lb > ϵ) && node.data.depth < 3 #&& ~isinf(root.data.ub-root.data.lb)
     global node
+    println("current node has ", value.(node.data.model[:x]))
     local x = value.(node.data.model[:x])
     # which edge to split along i.e. which variable to fix next?
     fixed_x_index = get_next_variable_to_fix(value.(x)) 
@@ -138,41 +138,44 @@ while (root.data.ub-root.data.lb > ϵ)
     # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
     left_model = node.data.model 
     l̃, relaxed_x_left = compute_lb(left_model, fixed_x_index, 0.0)
-    print("solved for l̃: ", l̃)
-
+    println("solved for l̃: ", l̃)
     ũ, feasible_x_left = compute_ub(copy(left_model), optimizer,fixed_x_index, 0.0, relaxed_x_left)
-    print("solved for ũ: ", ũ)
+    println("solved for ũ: ", ũ)
     
     #create new child node (left)
-    # IMPORTANT: push! to get the list of fixed variables updated
-    println("node.data.fixed_x_ind: ", node.data.fixed_x_ind)
     fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
-    fixed_x_values = vcat(node.data.fixed_x_values,0.0)
-    left_node = leftchild!(node, MyNodeData(left_model, feasible_x_left, fixed_x_indices, fixed_x_values,l̃,ũ))
+    fixed_xs = vcat(node.data.fixed_x_values,0.0)
+    left_node = leftchild!(node, MyNodeData(left_model, feasible_x_left, fixed_x_indices, fixed_xs,l̃,ũ))
 
     # solve the right child problem to get l-bar and u-bar
     right_model = node.data.model
-    println("solving for l̄")
     l̄, relaxed_x_right = compute_lb(right_model, fixed_x_index, 1.0)
-    println("solving for ū")
-    ū, feasible_x_right = compute_ub(copy(right_model), optimizer, fixed_x_index, 0.0, relaxed_x_right)
-
+    
+    println("solved for l̄: ", l̄)
+    ū, feasible_x_right = compute_ub(copy(right_model), optimizer, fixed_x_index, 1.0, relaxed_x_right)
+    println("solved for ū: ", ū)
+    fixed_xs = vcat(node.data.fixed_x_values,1.0)
+    println("fixed indices are : ", fixed_x_indices, " to ", fixed_xs)
     #create new child node (right)
-    right_node = rightchild!(node, MyNodeData(right_model, feasible_x_right, fixed_x_indices,vcat(node.data.fixed_x_values,1.0),l̄,ū))
+    right_node = rightchild!(node, MyNodeData(right_model, feasible_x_right, fixed_x_indices,fixed_xs,l̄,ū))
 
     # new lower and upper bounds on p*: pick the minimum
     λ =  minimum([l̄, l̃]) 
     μ =  minimum([ū, ũ])
     # TODO: not if both are Inf? need to trace back and follow other path!
 
-    node = λ==l̄ ? right_node : left_node
+    node_with_best_lb = λ==l̄ ? right_node : left_node
+    node_with_best_ub = μ==ū ? right_node : left_node
     #back-propagate the new lb and ub to root: TOASK: BUT NOT FOR i = 1!
-    update_best_lb(node)
-    update_best_ub(node)
+    update_best_ub(node_with_best_ub)
+    update_best_lb(node_with_best_lb)
+
+    println("root bounds: ", root.data.lb,"    ", root.data.ub)
 
     # decide which child node to branch on next: pick the one with the lowest lb
     node = branch_from_node(root) #start from root at every iteration, trace down to the max. depth
-    println("Difference: ", root.data.ub-root.data.lb)
+    println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
+    println(" ")
 end
 
 #print_tree(root)
@@ -183,8 +186,9 @@ final_solution = root.data.solution_x
 println("Final solution: ", root.data.ub, " using: ", final_solution)
 
 bin_model = Model(optimizer)
-set_optimizer_attribute(bin_Emodel, "OutputFlag", 0)
+set_optimizer_attribute(bin_model, "OutputFlag", 0)
 
 binary_model = build_base_model(bin_model,n,k,Q,c,true)
 optimize!(binary_model)
+
 println("Binary exact solution: ", objective_value(binary_model), " using: ", value.(binary_model[:x]))

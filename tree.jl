@@ -99,13 +99,21 @@ function update_best_ub(node::BinaryNode)
 end
 
 function branch_from_node(node::BinaryNode)
-    println("BRANCHING AT DEPTH ", node.data.depth)
-    if isempty(children(node))
+    if isnothing(node.left) || isnothing(node.right) 
         return node
     elseif (node.left.data.lb <= node.right.data.lb) 
+        println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
         node = node.left
-    else 
-        node = root.right
+        println("BRANCHING LEFT AT DEPTH ", node.data.depth)
+
+    elseif  (node.left.data.lb > node.right.data.lb) 
+        println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
+        node = node.right
+        println("BRANCHING RIGHT AT DEPTH ", node.data.depth)
+    else
+        error("Error with Tree?")
+        print_tree(node)
+        return 
     end
     branch_from_node(node)
 end 
