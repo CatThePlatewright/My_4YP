@@ -8,18 +8,12 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 # model parameters
-n = 10
-k = 5
-Q = Matrix{Float16}(I, n, n) 
+n = 4
+k = 2
+Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
-c = rand(Float16,n)
+c = rand(Float64,n)
 
-mutable struct node{T}
-    data::T
-    left::Union{node, Nothing}
-    right::Union{node, Nothing}
-    node(T)= (data=T; left= Nothing; right= Nothing)
-end
 
 function add_constraints(
     model::Model, k::Int)
@@ -28,7 +22,7 @@ function add_constraints(
     return
 end
 
-function fix_variable(model::Model, i::Int, value::Float16)
+function fix_variable(model::Model, i::Int, value::Float64)
     x = model[:x]
     @constraint(model, x[i]==value) # anonymous constraint to avoid constraintref/ name conflicts
     #@constraint(model, fix_var[i], x[i]==value)
@@ -53,7 +47,7 @@ end
 
 function build_child_model(model::Model, i::Int, fix_to_value, final_p_values)
     set_optimizer(model, optimizer_with_attributes(Gurobi.Optimizer, "OutputFlag" => 0))
-    fix_variable(model, i, Float16(fix_to_value))
+    fix_variable(model, i, Float64(fix_to_value))
         # Or: new_model, reference_map = copy_model(model)
         #  x_new = reference_map[x]
     x = model[:x]
@@ -61,7 +55,7 @@ function build_child_model(model::Model, i::Int, fix_to_value, final_p_values)
     if termination_status(model) == MOI.OPTIMAL
         if i == n
             # println(model)
-            println("Optimal values for x:", value.(x))
+            #println("Optimal values for x:", value.(x))
             # println("Optimal Objective", objective_value(model))
             push!(final_p_values, objective_value(model))
         end
@@ -90,9 +84,9 @@ p = Vector{Float64}() # DON'T FORGET () TO CREATE AN INSTANCE NOT JUST DATA TYPE
 final_p_values = Vector{Float64}()
 #constraint_list =  Vector{Any}()
 
-base_model = build_base_model(model,n,k,Q,c)
+base_model = build_base_model(model,n,k,Q,c,true)
 x = base_model[:x]
 optimize!(base_model)
 push!(p,objective_value(base_model))
 
-solve_model(base_model,1,p, final_p_values)
+#solve_model(base_model,1,p, final_p_values)

@@ -4,7 +4,8 @@
 Less constraints overall since relaxed constraints are replaced by fix-variable constraint.
 
 =#
-using JuMP, Gurobi, LinearAlgebra, Random, DataStructures
+include("tree.jl")
+using JuMP, Gurobi, LinearAlgebra, Random, DataStructures, AbstractTrees
 
 function add_constraints(model::Model, lb, ub)
     x = model[:x]
@@ -14,7 +15,7 @@ function add_constraints(model::Model, lb, ub)
     return
 end
 
-function fix_variable(model::Model, i::Int, value::Float16)
+function fix_variable(model::Model, i::Int, value::Float64)
     x = model[:x]
     con1 = model[:lb_constraint]
     con2 = model[:ub_constraint]
@@ -39,61 +40,48 @@ function build_unbounded_base_model(optimizer, n::Int,k::Int,Q::Matrix,c::Vector
     return model
 end
 
-function build_child_model(model::Model, i::Int, fix_to_value, final_p_values)
-    fix_variable(model, i, Float16(fix_to_value))
-        # Or: new_model, reference_map = copy_model(model)
-        #  x_new = reference_map[x]
-    x = model[:x]
-    optimize!(model)
-    if termination_status(model) == MOI.OPTIMAL
-        if i == n
-            println(model)
-            println("Optimal values for x:", value.(x))
-            println("Optimal Objective", objective_value(model))
-            push!(final_p_values, objective_value(model))
-        end
-        return objective_value(model)
-    else
-        return Inf
-    end
-    
-end
 
-" returns the upper bound computed when given the model.
+" returns the upper bound computed when given the model as well as the rounded variable solution.
 all variables are rounded based on relaxed_vars from lower_bound_model.
 fixed_x is the variable you fix on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(model::Model, fixed_x_index, value, relaxed_vars)
+function compute_ub(model::Model, optimizer, fixed_x_index, fix_value, relaxed_vars)
 
     # set the relaxed variables equal to the rounded binary values
     # need to update the rhs of the vectorised ub and lb constraints
     rounded_bounds = round.(value.(relaxed_vars))
+    println("Rounded vars:", rounded_bounds)
+
+    # when model is a copy of another model, need to set the optimizer again
+    set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+
     con1 = model[:lb_constraint]
     con2 = model[:ub_constraint]
-    set_normalized_rhs(con1[i], rounded_bounds[i] for i in 1:n)
-    set_normalized_rhs(con2[i], rounded_bounds[i] for i in 1:n)
+    x = model[:x]
 
+    for i in 1:length(relaxed_vars)
+        set_normalized_rhs(con1[i] , rounded_bounds[i])
+        set_normalized_rhs(con2[i], rounded_bounds[i])
+    end
     # force the branching variables to fixed value
     if ~isnothing(fixed_x_index) && ~isnothing(value)
-        x = model[:x]
-        fix(x[fixed_x_index], value; force = true)
+        fix(x[fixed_x_index], fix_value; force = true)
     end
-
+    
     optimize!(model)
     #TODO: write feasibility check function for this if-else
     if termination_status(model) == MOI.OPTIMAL
-        return objective_value(model)
+        return objective_value(model), value.(x)
     else 
-        println("Infeasible or unbounded problem")
-        return Inf
-        #TODO: terminate the node here
+        println("Infeasible or unbounded problem for ub computation")
+        return Inf, [Inf for _ in 1:length(relaxed_vars)]
     end
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fixed_x is the
 branching variable to be set to fixed value"
-function compute_lb(model::Model, fixed_x_index, value::Float16)
+function compute_lb(model::Model, fixed_x_index, value::Float64)
     x = model[:x]
     fix(x[fixed_x_index], value; force = true) # overrides previous relaxed constraint
     optimize!(model)
@@ -101,66 +89,102 @@ function compute_lb(model::Model, fixed_x_index, value::Float16)
     if termination_status(model) == MOI.OPTIMAL
         return objective_value(model), x
     else 
-        println("Infeasible or unbounded problem")
-        return Inf
-        #terminate the node here
+        println("Infeasible or unbounded problem for lb computation")
+        return Inf, x
     end
 end
 
+"return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)"
+function get_next_variable_to_fix(x_values::Vector{Float64})
+    return argmin(abs.(x_values .- 0.5))
+end
 # model parameters
 optimizer = Gurobi.Optimizer
-n = 4
+n = 5
 k = 2
-Q = Matrix{Float16}(I, n, n) 
+Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
-c = rand(Float16,n)
-ub = Vector{Float64}() 
-lb = Vector{Float64}() 
-final_p_values = Vector{Float64}()
+c = rand(Float64,n)
 
+# build the root node
 # 1) compute L1, lower bound on p* of mixed Boolean problem (p.5 of BnB paper)
+
 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
-x = base_model[:x]
 add_constraints(base_model, zeros(n), ones(n)) # binary case would make ub and lb constraints redundant!
 optimize!(base_model)
 
-if termination_status(model) == MOI.OPTIMAL
-    push!(lb,objective_value(base_model))
+if termination_status(base_model) == MOI.OPTIMAL
+    lb =objective_value(base_model)
     # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
-    push!(ub, compute_ub(base_model, nothing, nothing, x))
+    # IMPORTANT: argument must be copy(model) to avoid overwriting relaxed constraint!
+    ub, feasible_x=compute_ub(copy(base_model), optimizer, nothing, nothing, value.(base_model[:x]))
 else 
-    error("Infeasible or unbounded problem")
-    # TODO: terminate
+    error("Infeasible or unbounded problem ")
+    # TODO: terminate/ close_node!
+end
+# this is our root node of the binarytree
+root = BinaryNode(MyNodeData(base_model,feasible_x,[],[],lb,ub))
+node = root
+ϵ = 0.00000001
+
+# 3) start branching
+while (root.data.ub-root.data.lb > ϵ) 
+#while node == root
+    global node
+    local x = value.(node.data.model[:x])
+    # which edge to split along i.e. which variable to fix next?
+    fixed_x_index = get_next_variable_to_fix(value.(x)) 
+    println("got next variable to fix: ", fixed_x_index)
+    # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
+    left_model = node.data.model 
+    l̃, relaxed_x_left = compute_lb(left_model, fixed_x_index, 0.0)
+    print("solved for l̃: ", l̃)
+
+    ũ, feasible_x_left = compute_ub(copy(left_model), optimizer,fixed_x_index, 0.0, relaxed_x_left)
+    print("solved for ũ: ", ũ)
+    
+    #create new child node (left)
+    # IMPORTANT: push! to get the list of fixed variables updated
+    println("node.data.fixed_x_ind: ", node.data.fixed_x_ind)
+    fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
+    fixed_x_values = vcat(node.data.fixed_x_values,0.0)
+    left_node = leftchild!(node, MyNodeData(left_model, feasible_x_left, fixed_x_indices, fixed_x_values,l̃,ũ))
+
+    # solve the right child problem to get l-bar and u-bar
+    right_model = node.data.model
+    println("solving for l̄")
+    l̄, relaxed_x_right = compute_lb(right_model, fixed_x_index, 1.0)
+    println("solving for ū")
+    ū, feasible_x_right = compute_ub(copy(right_model), optimizer, fixed_x_index, 0.0, relaxed_x_right)
+
+    #create new child node (right)
+    right_node = rightchild!(node, MyNodeData(right_model, feasible_x_right, fixed_x_indices,vcat(node.data.fixed_x_values,1.0),l̄,ū))
+
+    # new lower and upper bounds on p*: pick the minimum
+    λ =  minimum([l̄, l̃]) 
+    μ =  minimum([ū, ũ])
+    # TODO: not if both are Inf? need to trace back and follow other path!
+
+    node = λ==l̄ ? right_node : left_node
+    #back-propagate the new lb and ub to root: TOASK: BUT NOT FOR i = 1!
+    update_best_lb(node)
+    update_best_ub(node)
+
+    # decide which child node to branch on next: pick the one with the lowest lb
+    node = branch_from_node(root) #start from root at every iteration, trace down to the max. depth
+    println("Difference: ", root.data.ub-root.data.lb)
 end
 
+#print_tree(root)
 
-# 3) start branching, for now, just stupidly by order of variable index
-i = 1
-eps = 0.00001
-model_queue = Queue{Model}() # queue to store current model for later copying
-enqueue!(model_queue, base_model)
+include("brute_recursion.jl")
+# having ub-lb < ϵ, test-solve for the problem again using incumbent solution_x 
+final_solution = root.data.solution_x
+println("Final solution: ", root.data.ub, " using: ", final_solution)
 
-while (ub[i]-lb[i] > eps) 
-    # TODO: maybe  for all model in Queue, dequeue?
-    # so the index i will not go out of bounds 2 lines down?
-    while (~isempty(Queue))
-        parent_model = dequeue!(Queue)
-        left_model = copy(parent_model)
+bin_model = Model(optimizer)
+set_optimizer_attribute(bin_Emodel, "OutputFlag", 0)
 
-        l_wiggle, relaxed_x_left = compute_lb(left_model, i, 0.0)
-        u_wiggle = compute_ub(left_model, i, 0.0, relaxed_x_left)
-
-        right_model = copy(parent_model)
-        l_bar, relaxed_x_right = compute_lb(right_model, i, 1.0)
-        u_bar = compute_ub(right_model, i, 0.0, relaxed_x_right)
-    end
-    # new lower and upper bounds on p*
-    # TODO: this should take minimum over all l_bars etc???
-    lb[i+1] =  minimum([l_bar, l_wiggle])
-    ub[i+1] =  minimum([u_bar, u_wiggle])
-
-    i += 1
-
-    enqueue!(Queue, left_model, right_model)
-    #TODO: figure out the order of dequeueing
-end
+binary_model = build_base_model(bin_model,n,k,Q,c,true)
+optimize!(binary_model)
+println("Binary exact solution: ", objective_value(binary_model), " using: ", value.(binary_model[:x]))
