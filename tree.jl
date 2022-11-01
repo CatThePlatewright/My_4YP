@@ -105,7 +105,6 @@ function branch_from_node(node::BinaryNode)
         println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
         node = node.left
         println("BRANCHING LEFT AT DEPTH ", node.data.depth)
-
     elseif  (node.left.data.lb > node.right.data.lb) 
         println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
         node = node.right
