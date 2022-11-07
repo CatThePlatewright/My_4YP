@@ -1,0 +1,92 @@
+using Test, LinearAlgebra
+include("first_bnb_example.jl")
+include("brute_recursion.jl")
+
+#if not run in full test setup, just do it for one float type
+@isdefined(UnitTestFloats) || (UnitTestFloats = [Float64])
+function simple_QP_params(Type::Type{T}) where {T <: AbstractFloat} 
+    optimizer = Gurobi.Optimizer
+    n = 5
+    k = 3
+    Q = Matrix{T}(I, n, n) #try sth else
+    #Q = rand(n,n)
+    #Q = Q'*Q
+    Random.seed!(1234)
+    c = rand(T,n)
+    ϵ = 0.00000001
+    #= P = spzeros(T,3,3)
+    A = sparse(I(3)*T(1.))
+    A = [A;-A].*2
+    c = T[3.;-2.;1.]
+    b = ones(T,6)
+    cones = [Clarabel.NonnegativeConeT(3), Clarabel.NonnegativeConeT(3)]
+ =#
+    return (optimizer, n, k, Q,c,ϵ)
+end
+
+
+@testset "Basic Tests" begin
+    for FloatT in UnitTestFloats
+        @testset "Basic QP Tests (T = $(FloatT))" begin
+
+            tol = FloatT(1e-3)
+            @testset "feasible" begin
+
+                optimizer, n, k, Q,c,ϵ = simple_QP_params(FloatT)
+                root = branch_and_bound_solve(optimizer,n,k,Q,c,ϵ)
+                @test termination_status(root.data.model)   == OPTIMAL
+
+                # check against binary solver in Gurobi
+                bin_model = Model(optimizer)
+                set_optimizer_attribute(bin_model, "OutputFlag", 0)
+                binary_model = build_base_model(bin_model,n,k,Q,c,true)
+                optimize!(binary_model)
+
+                @test isapprox(norm(root.data.solution_x - FloatT.(value.(binary_model[:x]))), zero(FloatT), atol=tol)
+                @test isapprox(root.data.ub, FloatT(objective_value(binary_model)), atol=tol)
+
+            end
+
+    #=      @testset "primal infeasible" begin
+
+                P,c,A,b,cones = basic_LP_data(FloatT)
+                b[1] = -1
+                b[4] = -1
+
+                solver   = Clarabel.Solver(P,c,A,b,cones)
+                Clarabel.solve!(solver)
+
+                @test solver.solution.status == Clarabel.PRIMAL_INFEASIBLE
+
+            end
+
+            @testset "dual infeasible" begin
+
+                P,c,A,b,cones = basic_LP_data(FloatT)
+                A[4,1] = 1.  #swap lower bound on first variable to redundant upper bound
+                c .= FloatT[1.;0;0]
+
+                solver   = Clarabel.Solver(P,c,A,b,cones)
+                Clarabel.solve!(solver)
+
+                @test solver.solution.status == Clarabel.DUAL_INFEASIBLE
+
+            end
+
+            @testset "dual infeasible (ill conditioned)" begin
+
+                P,c,A,b,cones = basic_LP_data(FloatT)
+                A[1,1] = eps(FloatT)
+                A[4,1] = -eps(FloatT)
+                c .= FloatT[1.;0;0]
+
+                solver   = Clarabel.Solver(P,c,A,b,cones)
+                Clarabel.solve!(solver)
+
+                @test solver.solution.status == Clarabel.DUAL_INFEASIBLE
+
+            end =#
+
+        end      #end "Basic LP Tests (FloatT)"
+    end
+end # UnitTestFloats
