@@ -101,13 +101,11 @@ function get_next_variable_to_fix(x_values::Vector{Float64})
 end
 
 
-function branch_and_bound_solve(optimizer, n, k, Q, c, ϵ)
+function branch_and_bound_solve(base_model, optimizer, n, ϵ)
     
 
     # build the root node
     # 1) compute L1, lower bound on p* of mixed Boolean problem (p.5 of BnB paper)
-
-    base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
     add_constraints(base_model, zeros(n), ones(n)) # binary case would make ub and lb constraints redundant!
     optimize!(base_model)
 

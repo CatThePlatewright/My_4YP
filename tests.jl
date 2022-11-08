@@ -1,4 +1,4 @@
-using Test, LinearAlgebra
+using Test
 include("first_bnb_example.jl")
 include("brute_recursion.jl")
 
@@ -33,7 +33,8 @@ end
             @testset "feasible" begin
 
                 optimizer, n, k, Q,c,ϵ = simple_QP_params(FloatT)
-                root = branch_and_bound_solve(optimizer,n,k,Q,c,ϵ)
+                base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
+                root = branch_and_bound_solve(base_model,optimizer,n,ϵ)
                 @test termination_status(root.data.model)   == OPTIMAL
 
                 # check against binary solver in Gurobi
@@ -44,6 +45,28 @@ end
 
                 @test isapprox(norm(root.data.solution_x - FloatT.(value.(binary_model[:x]))), zero(FloatT), atol=tol)
                 @test isapprox(root.data.ub, FloatT(objective_value(binary_model)), atol=tol)
+
+            end
+            @testset "primal infeasible" begin
+                println("Starting Primal Infeasible Test")
+                optimizer = Gurobi.Optimizer
+                n = 2
+                k= 1
+                Q = Matrix{FloatT}(I, n, n) 
+                Random.seed!(1234)
+                c = rand(FloatT,n)
+                ϵ = 0.00000001
+                
+                base_model_infeasible = build_unbounded_base_model(optimizer,n,k,Q,c)
+                x = base_model_infeasible[:x]
+                #adding linear constraints to form an binary infeasible trapeze
+                @constraint(base_model_infeasible, c1, x[1] + x[2] >= 0.5) 
+                @constraint(base_model_infeasible, c2, - x[1] + x[2] >= -0.5) 
+                @constraint(base_model_infeasible, c3, - x[1] + x[2] <= 0.5) 
+                @constraint(base_model_infeasible, c4, x[1] + x[2] <= 1.5) 
+                root = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ)
+                print(root.data.model)
+                @test termination_status(root.data.model)   == INFEASIBLE
 
             end
 
