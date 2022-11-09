@@ -51,11 +51,12 @@ function compute_lb(model::Model, fixed_x_indices, fix_x_values)
 end
 
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
-integer_vars is the SORTED list of binary variables within the model vars, only select from these"
-function get_next_variable_to_fix_to_integer(x, integer_vars)
+integer_vars is the SORTED list of binary variables within the model vars, only select from these
+fixed_x_indices is the vector of already fixed variable indices, these should not be considered!"
+function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
     @assert issorted(integer_vars)
-    idx = integer_vars[1]
-    for i in integer_vars
+    idx = setdiff(integer_vars, fixed_x_indices)[1]
+    for i in setdiff(integer_vars, fixed_x_indices) # choose only from indices in integer_vars but not in fixed_x_indices!
         closest_int = round(x[i])
         closest_int_idx = round(x[idx])
         if abs(x[i] -closest_int - 0.5) < abs(x[idx]- closest_int_idx - 0.5)
@@ -85,11 +86,11 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
     node = root
 
     # 3) start branching
-    while (root.data.ub-root.data.lb > ϵ) && (node.data.depth < 20)
+    while (root.data.ub-root.data.lb > ϵ) #&& (node.data.depth < 20)
         println("current node at depth ", node.data.depth, " has x as ", value.(node.data.model[:x]))
         x = value.(node.data.model[:x])
         # which edge to split along i.e. which variable to fix next?
-        fixed_x_index = get_next_variable_to_fix_to_integer(value.(x), integer_vars) 
+        fixed_x_index = get_next_variable_to_fix_to_integer(value.(x), integer_vars, node.data.fixed_x_ind) 
         println("GOT NEXT VAR TO FIX: ", fixed_x_index, " TO FLOOR : ", floor(x[fixed_x_index]), " TO CEIL ", ceil(x[fixed_x_index]))
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always fixes the next variable to closest lower integer
@@ -143,12 +144,12 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
 end
 
 optimizer = Gurobi.Optimizer
-n = 5
-k= 4
-m = 2 # how many integer variables (if mixed integer problem)
-Q = Matrix{FloatT}(I, n, n) 
+n = 30
+k= 46
+m = 20 # how many integer variables (if mixed integer problem)
+Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
-c = rand(FloatT,n)
+c = rand(Float64,n)
 ϵ = 0.00000001
 
 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
@@ -158,13 +159,19 @@ root = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
 # check against binary solver in Gurobi
-bin_model = Model(optimizer)
-set_optimizer_attribute(bin_model, "OutputFlag", 0)
-x = @variable(bin_model, x[i = 1:n] >= 0.0)
+exact_model = Model(optimizer)
+set_optimizer_attribute(exact_model, "OutputFlag", 0)
+x = @variable(exact_model, x[i = 1:n] >= 0.0)
 for bin in integer_vars
     set_integer(x[bin])
 end
-@objective(bin_model, Min, x'*Q*x + c'*x)
-@constraint(bin_model, sum_constraint, sum(x) == k)
-optimize!(bin_model)
-println("Exact solution: ", objective_value(bin_model) , " using ", value.(bin_model[:x])) 
+@objective(exact_model, Min, x'*Q*x + c'*x)
+@constraint(exact_model, sum_constraint, sum(x) == k)
+optimize!(exact_model)
+println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
+
+using Test
+tol = 1e-4
+
+@test isapprox(norm(root.data.solution_x - Float64.(value.(exact_model[:x]))), zero(Float64), atol=tol)
+@test isapprox(root.data.ub, Float64(objective_value(exact_model)), atol=tol)
