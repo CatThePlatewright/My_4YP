@@ -90,11 +90,12 @@ function compute_lb(model::Model, fixed_x_indices, fix_x_values)
 end
 
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
-Binary_vars is the SORTED list of binary variables within the model vars, only select from these"
-function get_next_variable_to_fix(x, binary_vars)
+Binary_vars is the SORTED list of binary variables within the model vars, only select from these
+fixed_vars is the vector of already fixed variable indices, these should not be considered!"
+function get_next_variable_to_fix(x, binary_vars, fixed_vars)
     @assert issorted(binary_vars)
-    idx = binary_vars[1]
-    for i in binary_vars
+    idx = setdiff(binary_vars,fixed_vars)[1]
+    for i in setdiff(binary_vars,fixed_vars)
         if abs(x[i] - 0.5) < abs(x[idx]-0.5)
             idx = i 
         end
@@ -128,7 +129,7 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
         x = value.(node.data.model[:x])
         # which edge to split along i.e. which variable to fix next?
         # for Mixed_binary_solver: only select among vars specified as binary
-        fixed_x_index = get_next_variable_to_fix(value.(x), binary_vars) 
+        fixed_x_index = get_next_variable_to_fix(value.(x), binary_vars, node.data.fixed_x_ind) 
         println("GOT NEXT VAR TO FIX: ", fixed_x_index)
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always fixes the next variable to 0
