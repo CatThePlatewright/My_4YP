@@ -63,13 +63,12 @@ AbstractTrees.nodetype(::Type{<:BinaryNode{MyNodeData}}) where {MyNodeData} = Bi
 
 "
 model is the JuMP model with underlying solver, points to the same model, so model[:x] is always the same
-solved is true once we have optimized the model
 solution_x: you need the solution stored in separate field as model[:x] holds only the solution to the current model
 fixed_x_ind:  which x's are fixed on this node, stored in vector of length 0 (root) - height_of_tree (leaves)
 fixed_x_values: which (binary) value the corresponding x's are fixed to
 lb, ub are the lower and upper bounds computed for this node"
 mutable struct MyNodeData #mutable since lb and ub can be updated after first creation of node
-     model::Model 
+     model::Model
      depth::Int
      solution_x::Vector{Float64}
      fixed_x_ind::Vector{Int} 
@@ -84,7 +83,6 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
  function update_best_lb(node::BinaryNode) #just update root not all parents???
     while ~isroot(node)
         AbstractTrees.parent(node).data.lb = node.data.lb
-        # or this? : getroot(node).data.lb = node.data.lb
         node = AbstractTrees.parent(node)
     end
 end
@@ -116,24 +114,6 @@ function branch_from_node(node::BinaryNode)
     end
     branch_from_node(node)
 end 
-
-function binarynode_example()
-    n₀ = BinaryNode(MyNodeData([],[],-9.9,2.4))
-    l₁ = leftchild!(n₀, MyNodeData(push!(n₀.data.fixed_x_ind,1),push!(n₀.data.fixed_x_values,0.0),29,30))
-
-    r₁ = rightchild!(n₀, MyNodeData([1],[1.0], -8.0,3.5))
-    r₂ = rightchild!(l₁, MyNodeData([2], [1.0], -8.0,2.2))
-    l₂ = leftchild!(l₁, MyNodeData([2], [1.0], -8.0,2.2))
-    r₃ = rightchild!(l₂, MyNodeData([3], [1.0], -8.0,2.2))
-    l₃ = leftchild!(l₂, MyNodeData([3], [1.0], -8.0,2.2))
-    r₄ = rightchild!(l₃, MyNodeData([4], [1.0], -8.0,2.2))
-    l₄ = leftchild!(l₃, MyNodeData([4], [1.0], -32,22))
-
-    propagate_bounds(l₄)
-
-    return 
-end
-#binarynode_example()
 
 
 

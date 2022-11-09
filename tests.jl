@@ -1,6 +1,6 @@
 using Test
-include("first_bnb_example.jl")
 include("brute_recursion.jl")
+include("mixed_binary_solver.jl")
 
 #if not run in full test setup, just do it for one float type
 @isdefined(UnitTestFloats) || (UnitTestFloats = [Float64])
@@ -30,7 +30,7 @@ end
         @testset "Basic QP Tests (T = $(FloatT))" begin
 
             tol = FloatT(1e-3)
-            @testset "feasible" begin
+            @testset "feasible_binary" begin
 
                 optimizer, n, k, Q,c,ϵ = simple_QP_params(FloatT)
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
@@ -40,16 +40,44 @@ end
                 # check against binary solver in Gurobi
                 bin_model = Model(optimizer)
                 set_optimizer_attribute(bin_model, "OutputFlag", 0)
-                binary_model = build_base_model(bin_model,n,k,Q,c,true)
+                binary_model = build_base_model(bin_model,n,k,Q,c,collect(1:n))
                 optimize!(binary_model)
 
                 @test isapprox(norm(root.data.solution_x - FloatT.(value.(binary_model[:x]))), zero(FloatT), atol=tol)
                 @test isapprox(root.data.ub, FloatT(objective_value(binary_model)), atol=tol)
 
             end
+            @testset "feasible_mixed_binary" begin
+                optimizer = Gurobi.Optimizer
+                n = 8
+                k= 5
+                m = 4 # how many binary variables
+                Q = Matrix{FloatT}(I, n, n) 
+                Random.seed!(1234)
+                c = rand(FloatT,n)
+                ϵ = 0.00000001
+
+                base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
+                binary_vars = sample(1:n, m, replace = false)
+                sort!(binary_vars)
+                root = branch_and_bound_solve(base_model,optimizer,n,ϵ, binary_vars)
+                @test termination_status(root.data.model)   == OPTIMAL
+                println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
+
+                # check against binary solver in Gurobi
+                bin_model = Model(optimizer)
+                set_optimizer_attribute(bin_model, "OutputFlag", 0)
+                binary_model = build_base_model(bin_model,n,k,Q,c,binary_vars)
+                optimize!(binary_model)
+                println("Exact solution: ", objective_value(binary_model) , " using ", value.(binary_model[:x]))
+                println(" ")
+                println(" ")
+                @test isapprox(norm(root.data.solution_x - FloatT.(value.(binary_model[:x]))), zero(FloatT), atol=tol)
+                @test isapprox(root.data.ub, FloatT(objective_value(binary_model)), atol=tol)
+            end
+
             @testset "primal infeasible" begin
                 println("Starting Primal Infeasible Test")
-                optimizer = Gurobi.Optimizer
                 n = 2
                 k= 1
                 Q = Matrix{FloatT}(I, n, n) 
@@ -66,7 +94,7 @@ end
                 @constraint(base_model_infeasible, c4, x[1] + x[2] <= 1.5) 
                 root = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ)
                 print(root.data.model)
-                @test termination_status(root.data.model)   == INFEASIBLE
+                @test termination_status(root.data.model)   == INFEASIBLE_OR_UNBOUNDED
 
             end
 

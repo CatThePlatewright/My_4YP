@@ -3,16 +3,9 @@ No upper bounds are calculated, i.e. the variables have not been rounded, due to
 of the methodology. However, since it is an exhaustive search approach, it still produces the wanted 
 answer. Using recursion for depth-first traversal.  =#
 using JuMP, Gurobi, LinearAlgebra, Random
-model = Model(Gurobi.Optimizer)
-set_optimizer_attribute(model, "OutputFlag", 0)
 
 
-# model parameters
-#=n = 4
-k = 2
-Q = Matrix{Float64}(I, n, n) 
-Random.seed!(1234)
-c = rand(Float64,n)=#
+
 
 
 function add_constraints(
@@ -31,15 +24,22 @@ function fix_variable(model::Model, i::Int, value::Float64)
 end
 
 function add_variables(
-    model::Model,n::Int, binary)
-    if binary
-        return @variable(model, x[1:n], Bin)
+    model::Model,n::Int, binary_vars)
+    if ~isempty(binary_vars)
+        x = @variable(model, 0.0 <= x[i = 1:n] <= 1.0)
+        for bin in binary_vars
+            set_binary(x[bin])
+        end
+#        model_x = model[:x]= @variable(model, [bin in binary_vars], Bin, base_name="binaries")
+        #append!(model_x,@variable(model, [3], lower_bound=0.0, upper_bound=1.0,base_name="non_bin"))
+        #append!(model_x, @variable(model, [i in setdiff(collect(1:n),binary_vars)], lower_bound=0.0, upper_bound= 1.0, base_name="non-binaries"))
+        return x
     end
     return @variable(model, 0.0 <= x[i = 1:n] <= 1.0)
 end
 
-function build_base_model(model::Model, n::Int,k::Int,Q::Matrix,c::Vector, binary = false)
-    x = add_variables(model, n, binary)
+function build_base_model(model::Model, n::Int,k::Int,Q::Matrix,c::Vector, binary_vars = [])
+    x = add_variables(model, n, binary_vars)
     @objective(model, Min, x'*Q*x + c'*x)
     add_constraints(model, k)
     return model
@@ -80,13 +80,13 @@ function solve_model(parent_model::Model, i::Int, p_values::Vector{Float64}, fin
     end
     return
 end
-p = Vector{Float64}() # DON'T FORGET () TO CREATE AN INSTANCE NOT JUST DATA TYPE!
+#= p = Vector{Float64}() # DON'T FORGET () TO CREATE AN INSTANCE NOT JUST DATA TYPE!
 final_p_values = Vector{Float64}()
 #constraint_list =  Vector{Any}()
 
-base_model = build_base_model(model,n,k,Q,c,true)
+base_model = build_base_model(model,n,k,Q,c)
 x = base_model[:x]
 optimize!(base_model)
-push!(p,objective_value(base_model))
+push!(p,objective_value(base_model)) =#
 
 #solve_model(base_model,1,p, final_p_values)
