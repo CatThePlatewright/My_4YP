@@ -1,4 +1,4 @@
-using StatsBase
+using StatsBase, Clarabel
 include("tree.jl")
 using JuMP, Gurobi, LinearAlgebra, Random, DataStructures, AbstractTrees
 
@@ -6,13 +6,19 @@ using JuMP, Gurobi, LinearAlgebra, Random, DataStructures, AbstractTrees
 the option of specifying which variables in x are binary is added to
 the initial first_bnb_example
 by default, branch_and_bound_solve() has this list of binary variables as the whole set of variables"""
-function add_constraints(model::Model, lb, ub)
+
+" only constrains the variables that are either binary or integer/natural to their interval
+for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
+    the rest of the variables are completely free"
+function add_constraints(model::Model, lb, ub, binary_vars)
     x = model[:x]
-    @constraint(model, lb_constraint, x .>= lb)
+    println(x)
+    x = [x[i] for i in binary_vars]
+    @constraint(model, lb_constraint, x.>= lb)
     if isnothing(ub)
-        @constraint(model, ub_constraint[i=1:n], x[i] <= 1000000000)
+        @constraint(model, ub_constraint, x.<= 1000000000)
     else
-        @constraint(model, ub_constraint, x .<= ub)
+        @constraint(model, ub_constraint, x.<= ub)
     end
     return
 end
@@ -61,9 +67,9 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     con1 = model[:lb_constraint]
     con2 = model[:ub_constraint]
     x = model[:x]
-    for (i, j) in zip(binary_vars,1:length(rounded_bounds))
-        set_normalized_rhs(con1[i] , rounded_bounds[j])
-        set_normalized_rhs(con2[i], rounded_bounds[j])
+    for i in 1:length(rounded_bounds)
+        set_normalized_rhs(con1[i] , rounded_bounds[i])
+        set_normalized_rhs(con2[i], rounded_bounds[i])
     end
     # force the branching variables to fixed value
     fix_variables(x, fixed_x_indices, fix_x_values)
@@ -109,7 +115,7 @@ end
 function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collect(1:n))
     
     # 1) compute L1, lower bound on p* of mixed Boolean problem (p.5 of BnB paper)
-    add_constraints(base_model, zeros(n), ones(n)) # binary case would make ub and lb constraints redundant!
+    add_constraints(base_model, zeros(length(binary_vars)), ones(length(binary_vars)), binary_vars) # binary case would make ub and lb constraints redundant!
     optimize!(base_model)
 
     if termination_status(base_model) == MOI.OPTIMAL

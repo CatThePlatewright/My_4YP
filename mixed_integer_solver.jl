@@ -3,52 +3,7 @@ include("mixed_binary_solver.jl")
 # add_constraints, fix_variables(), build_unbounded_base_model()
 
 
-" returns the upper bound computed when given the model as well as the feasible variable solution.
-variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
-fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
-and all variables take on the rounded values."
-function compute_ub(model::Model, optimizer, integer_vars,fixed_x_indices, fix_x_values, relaxed_vars)
-
-    # set the relaxed variables equal to the rounded binary values
-    # if these are in the set of binary variables    
-    rounded_bounds = [round(value(relaxed_vars[i])) for i in integer_vars]
-    # when model is a copy of another model, need to set the optimizer again
-    set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
-    println("rounded bounds vector: ", rounded_bounds)
-
-    con1 = model[:lb_constraint]
-    con2 = model[:ub_constraint]
-    x = model[:x]
-    for (i, j) in zip(integer_vars,1:length(rounded_bounds))
-        set_normalized_rhs(con1[i] , rounded_bounds[j])
-        set_normalized_rhs(con2[i], rounded_bounds[j])
-    end
-    # force the branching variables to fixed value
-    fix_variables(x, fixed_x_indices, fix_x_values)
-    optimize!(model)
-    if termination_status(model) == MOI.OPTIMAL
-        return objective_value(model), value.(x)
-    else 
-        println("Infeasible or unbounded problem for ub computation")
-        return Inf, [Inf for _ in 1:length(relaxed_vars)]
-    end
-end
-
-" return the lower bound as well as the values of x computed (for use by compute_ub()).
-model is given with relaxed constraints. fix_x_values is the vector of the
-variables of fixed_x_indices that are currently fixed to an integer"
-function compute_lb(model::Model, fixed_x_indices, fix_x_values)
-    x = model[:x]
-    fix_variables(x,fixed_x_indices,fix_x_values)
-    optimize!(model)
-    if termination_status(model) == MOI.OPTIMAL
-        println("Values of relaxed solution ", value.(x))
-        return objective_value(model), x
-    else 
-        println("Infeasible or unbounded problem for lb computation")
-        return Inf, [Inf for _ in 1:length(x)]
-    end
-end
+#=     =#
 
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
 integer_vars is the SORTED list of binary variables within the model vars, only select from these
@@ -69,7 +24,7 @@ end
 
 function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=collect(1:n))
     # natural variables relaxed to non-negative vars
-    add_constraints(base_model, zeros(n), nothing) 
+    add_constraints(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
     optimize!(base_model)
 
     if termination_status(base_model) == MOI.OPTIMAL
@@ -161,7 +116,7 @@ println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 # check against binary solver in Gurobi
 exact_model = Model(optimizer)
 set_optimizer_attribute(exact_model, "OutputFlag", 0)
-x = @variable(exact_model, x[i = 1:n] >= 0.0)
+x = @variable(exact_model, x[i = 1:n])
 for bin in integer_vars
     set_integer(x[bin])
 end

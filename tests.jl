@@ -35,6 +35,8 @@ end
                 optimizer, n, k, Q,c,ϵ = simple_QP_params(FloatT)
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
                 root = branch_and_bound_solve(base_model,optimizer,n,ϵ)
+                # put a termination status check function in your bnb solver, 
+                # checking if lb=ub
                 @test termination_status(root.data.model)   == OPTIMAL
 
                 # check against binary solver in Gurobi
@@ -60,6 +62,7 @@ end
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
                 binary_vars = sample(1:n, m, replace = false)
                 sort!(binary_vars)
+                println(binary_vars)
                 root = branch_and_bound_solve(base_model,optimizer,n,ϵ, binary_vars)
                 @test termination_status(root.data.model)   == OPTIMAL
                 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
@@ -78,6 +81,7 @@ end
 
             @testset "primal infeasible" begin
                 println("Starting Primal Infeasible Test")
+                optimizer = Gurobi.Optimizer
                 n = 2
                 k= 1
                 Q = Matrix{FloatT}(I, n, n) 
@@ -94,6 +98,9 @@ end
                 @constraint(base_model_infeasible, c4, x[1] + x[2] <= 1.5) 
                 root = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ)
                 print(root.data.model)
+                # status of the bnb solver: get termination status UNDEFINED if not yet solved,
+                # INFEASIBLE if lb is Inf
+                # TODO: unbounded case??? i.e. dual infeasible (= primal unbounded)
                 @test termination_status(root.data.model)   == INFEASIBLE_OR_UNBOUNDED
 
             end

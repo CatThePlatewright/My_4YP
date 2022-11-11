@@ -25,20 +25,18 @@ end
 
 function add_variables(
     model::Model,n::Int, binary_vars)
-    if ~isempty(binary_vars)
-        x = @variable(model, 0.0 <= x[i = 1:n] <= 1.0)
-        for bin in binary_vars
-            set_binary(x[bin])
-        end
-#        model_x = model[:x]= @variable(model, [bin in binary_vars], Bin, base_name="binaries")
-        #append!(model_x,@variable(model, [3], lower_bound=0.0, upper_bound=1.0,base_name="non_bin"))
-        #append!(model_x, @variable(model, [i in setdiff(collect(1:n),binary_vars)], lower_bound=0.0, upper_bound= 1.0, base_name="non-binaries"))
-        return x
+    x = @variable(model, x[i = 1:n])
+    for bin in binary_vars
+        set_binary(x[bin])
     end
-    return @variable(model, 0.0 <= x[i = 1:n] <= 1.0)
+#        model_x = model[:x]= @variable(model, [bin in binary_vars], Bin, base_name="binaries")
+    #append!(model_x,@variable(model, [3], lower_bound=0.0, upper_bound=1.0,base_name="non_bin"))
+    #append!(model_x, @variable(model, [i in setdiff(collect(1:n),binary_vars)], lower_bound=0.0, upper_bound= 1.0, base_name="non-binaries"))
+    return x
+
 end
 
-function build_base_model(model::Model, n::Int,k::Int,Q::Matrix,c::Vector, binary_vars = [])
+function build_base_model(model::Model, n::Int,k::Int,Q::Matrix,c::Vector, binary_vars = collect(1:n))
     x = add_variables(model, n, binary_vars)
     @objective(model, Min, x'*Q*x + c'*x)
     add_constraints(model, k)
