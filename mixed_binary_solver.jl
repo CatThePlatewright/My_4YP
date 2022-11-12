@@ -12,7 +12,6 @@ for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
     the rest of the variables are completely free"
 function add_constraints(model::Model, lb, ub, binary_vars)
     x = model[:x]
-    println(x)
     x = [x[i] for i in binary_vars]
     @constraint(model, lb_constraint, x.>= lb)
     if isnothing(ub)
@@ -31,7 +30,7 @@ function fix_variables(x, fixed_x_indices, fix_values)
         end
         # crucial step: relax any variables not in these vectors is currently fixed 
         # (because we changed to a different branch but model is same for all nodes)
-        for i in 1:length(x)
+        for i in 1:lastindex(x)
             if ~(i in fixed_x_indices) && is_fixed(x[i])
                 unfix(x[i])
             end
@@ -67,7 +66,7 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     con1 = model[:lb_constraint]
     con2 = model[:ub_constraint]
     x = model[:x]
-    for i in 1:length(rounded_bounds)
+    for i in 1:lastindex(rounded_bounds)
         set_normalized_rhs(con1[i] , rounded_bounds[i])
         set_normalized_rhs(con2[i], rounded_bounds[i])
     end
@@ -111,7 +110,16 @@ function get_next_variable_to_fix(x, binary_vars)
     return idx
 end
 
-
+function termination_status_bnb(ub, lb,ϵ)
+    if lb == Inf
+        return "INFEASIBLE"
+    elseif ub-lb <= ϵ
+        return "OPTIMAL"
+    end
+    return "UNDEFINED" 
+end
+#status of the bnb solver: get termination status UNDEFINED if not yet solved,
+                # INFEASIBLE if lb is Inf
 function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collect(1:n))
     
     # 1) compute L1, lower bound on p* of mixed Boolean problem (p.5 of BnB paper)
@@ -124,15 +132,15 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         # IMPORTANT: argument must be copy(model) to avoid overwriting relaxed constraint!
         ub, feasible_x=compute_ub(copy(base_model), optimizer, binary_vars, nothing, nothing, value.(base_model[:x]))
+        term_status = "UNDEFINED"
     else 
-        println("Infeasible or unbounded problem ")
+        term_status = "INFEASIBLE"
     end
     # this is our root node of the binarytree
     root = BinaryNode(MyNodeData(base_model,feasible_x,[],[],lb,ub))
     node = root
-
     # 3) start branching
-    while (root.data.ub-root.data.lb > ϵ) 
+    while term_status == "UNDEFINED"
         println("current node at depth ", node.data.depth, " has x as ", value.(node.data.model[:x]))
         x = value.(node.data.model[:x])
         # which edge to split along i.e. which variable to fix next?
@@ -162,7 +170,6 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
         println("solved for l̄: ", l̄)
         ū, feasible_x_right = compute_ub(copy(right_model), optimizer, binary_vars, fixed_x_indices, fixed_x_right, relaxed_x_right)
         println("solved for ū: ", ū)
-        println("fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)
         #create new child node (right)
         right_node = rightchild!(node, MyNodeData(right_model, feasible_x_right, fixed_x_indices,fixed_x_right,l̄,ū))
 
@@ -186,8 +193,9 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
 
         println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
         println(" ")
+        term_status = termination_status_bnb(root.data.ub,root.data.lb, ϵ)
     end
-    return root
+    return root, term_status
 end
 
 #= optimizer = Gurobi.Optimizer

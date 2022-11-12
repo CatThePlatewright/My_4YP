@@ -32,8 +32,9 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
         println("Solution x of unbounded base model: ", value.(base_model[:x]))
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         ub, feasible_x=compute_ub(copy(base_model), optimizer, integer_vars, nothing, nothing, value.(base_model[:x]))
+        term_status = "UNDEFINED"
     else 
-        println("Infeasible or unbounded problem ")
+        term_status = "INFEASIBLE"
     end
     # this is our root node of the binarytree
     #TODO change node name
@@ -41,7 +42,7 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
     node = root
 
     # 3) start branching
-    while (root.data.ub-root.data.lb > ϵ) #&& (node.data.depth < 20)
+    while term_status == "UNDEFINED"
         println("current node at depth ", node.data.depth, " has x as ", value.(node.data.model[:x]))
         x = value.(node.data.model[:x])
         # which edge to split along i.e. which variable to fix next?
@@ -94,14 +95,16 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
 
         println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
         println(" ")
+        term_status = termination_status_bnb(root.data.ub,root.data.lb, ϵ)
+
     end
-    return root
+    return root, term_status
 end
 
 optimizer = Gurobi.Optimizer
-n = 30
+n = 10
 k= 46
-m = 20 # how many integer variables (if mixed integer problem)
+m = 10 # how many integer variables (if mixed integer problem)
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
 c = rand(Float64,n)
@@ -110,7 +113,8 @@ c = rand(Float64,n)
 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
 integer_vars = sample(1:n, m, replace = false)
 sort!(integer_vars)
-root = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
+root, term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
+@test term_status == "OPTIMAL"
 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
 # check against binary solver in Gurobi
