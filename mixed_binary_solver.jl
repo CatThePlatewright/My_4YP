@@ -42,7 +42,14 @@ end
 
 function build_unbounded_base_model(optimizer, n::Int,k::Int,Q::Matrix,c::Vector)
     model = Model()
-    set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+    if optimizer == Gurobi.Optimizer
+        set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+    elseif optimizer == Clarabel.Optimizer
+        set_optimizer(model,optimizer)
+        set_optimizer_attribute(model, "verbose", false)
+        # do this so that the solver doesn't scale the data
+        set_optimizer_attribute(model, "equilibrate_enable", false)
+    end
     x = @variable(model, x[1:n])
     @objective(model, Min, x'*Q*x + c'*x)
     @constraint(model, sum_constraint, sum(x) == k)
@@ -60,7 +67,14 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     # if these are in the set of binary variables    
     rounded_bounds = [round(value(relaxed_vars[i])) for i in binary_vars]
     # when model is a copy of another model, need to set the optimizer again
-    set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+    if optimizer == Gurobi.Optimizer
+        set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+    elseif optimizer == Clarabel.Optimizer
+        set_optimizer(model,optimizer)
+        set_optimizer_attribute(model, "verbose", false)
+        # do this so that the solver doesn't scale the data
+        set_optimizer_attribute(model, "equilibrate_enable", false)
+    end
     println("rounded bounds vector: ", rounded_bounds)
 
     con1 = model[:lb_constraint]

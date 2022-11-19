@@ -23,9 +23,6 @@ end
 
 
 function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=collect(1:n))
-    # natural variables relaxed to non-negative vars
-    add_constraints(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
-    optimize!(base_model)
 
     if termination_status(base_model) == MOI.OPTIMAL
         lb =objective_value(base_model)
@@ -100,11 +97,35 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
     end
     return root, term_status
 end
-
-optimizer = Gurobi.Optimizer
-n = 10
-k= 46
-m = 10 # how many integer variables (if mixed integer problem)
+function solve_base_model(base_model::Model,integer_vars)
+    # natural variables relaxed to non-negative vars
+    add_constraints(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
+    optimize!(base_model)
+    
+end
+function getClarabeldata(model::Model)
+    # access the Clarabel solver object
+    solver = JuMP.unsafe_backend(model).solver
+    # now you can get data etc
+    data = solver.data
+    P = data.P
+    q = data.q
+    A = data.A
+    b = data.b
+    s = solver.cones
+    return P,q,A,b,s
+end
+function rewrite_in_Clarabel(P,q,A,b,cones)
+    settings = Clarabel.Settings(max_iter = 15, verbose = false)
+    solver   = Clarabel.Solver()
+    Clarabel.setup!(solver, P, q, A, b, cones, settings)
+    result = Clarabel.solve!(solver)
+    return result
+end
+optimizer = Clarabel.Optimizer
+n = 5
+k= 8
+m = 5 # how many integer variables (if mixed integer problem)
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
 c = rand(Float64,n)
@@ -113,12 +134,16 @@ c = rand(Float64,n)
 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
 integer_vars = sample(1:n, m, replace = false)
 sort!(integer_vars)
+solve_base_model(base_model,integer_vars)
+P,q,A,b,s = getClarabeldata(base_model)
+Clarabel_result = rewrite_in_Clarabel(P,q,A,b,s)
+println(Clarabel_result)
 root, term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
 @test term_status == "OPTIMAL"
 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
 # check against binary solver in Gurobi
-exact_model = Model(optimizer)
+exact_model = Model(Gurobi.Optimizer)
 set_optimizer_attribute(exact_model, "OutputFlag", 0)
 x = @variable(exact_model, x[i = 1:n])
 for bin in integer_vars
