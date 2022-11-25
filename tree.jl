@@ -68,9 +68,9 @@ fixed_x_ind:  which x's are fixed on this node, stored in vector of length 0 (ro
 fixed_x_values: which (binary) value the corresponding x's are fixed to
 lb, ub are the lower and upper bounds computed for this node"
 mutable struct MyNodeData #mutable since lb and ub can be updated after first creation of node
-     model::Model
+     model #the JuMP model 
      depth::Int
-     solution_x::Vector{Float64}
+     solution_x::Vector{Float64} # storing the BEST solution (best ub)
      fixed_x_ind::Vector{Int} 
      fixed_x_values::Vector{Float64} # to which value is it fixed (0 or 1)
      lb::Float64
@@ -79,6 +79,21 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
         return new(model, length(fixed_x_ind), solution_x, fixed_x_ind,fixed_x_values,lb,ub)
      end
  end
+
+ mutable struct ClarabelNodeData #mutable since lb and ub can be updated after first creation of node
+    solver #the Clarabel solver object in Clarabel 
+    solution # the result/solution object != solution_x
+    depth::Int
+    solution_x::Vector{Float64} # storing the BEST solution (best ub)
+    fixed_x_ind::Vector{Int} 
+    fixed_x_values::Vector{Float64} # to which value is it fixed (0 or 1)
+    lb::Float64
+    ub::Float64
+    debug_b::Vector{Float64} # stores only the b-vector in compute_ub (so includes rounded relaxed_vars)
+    function ClarabelNodeData(solver, solution, solution_x, fixed_x_ind,fixed_x_values,lb,ub) 
+       return new(solver, solution, length(fixed_x_ind), solution_x, fixed_x_ind,fixed_x_values,lb,ub, zeros(1))
+    end
+end
 
  function update_best_lb(node::BinaryNode) #just update root not all parents???
     while ~isroot(node)

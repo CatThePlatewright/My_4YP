@@ -13,6 +13,7 @@ for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
 function add_constraints(model::Model, lb, ub, binary_vars)
     x = model[:x]
     x = [x[i] for i in binary_vars]
+    println(x)
     @constraint(model, lb_constraint, x.>= lb)
     if isnothing(ub)
         @constraint(model, ub_constraint, x.<= 1000000000)
@@ -77,6 +78,7 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     end
     println("rounded bounds vector: ", rounded_bounds)
 
+    # con1 and con2 are of length rounded bounds/ binary_vars!
     con1 = model[:lb_constraint]
     con2 = model[:ub_constraint]
     x = model[:x]
@@ -84,6 +86,7 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
         set_normalized_rhs(con1[i] , rounded_bounds[i])
         set_normalized_rhs(con2[i], rounded_bounds[i])
     end
+    
     # force the branching variables to fixed value
     fix_variables(x, fixed_x_indices, fix_x_values)
     optimize!(model)
@@ -149,6 +152,7 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
         term_status = "UNDEFINED"
     else 
         term_status = "INFEASIBLE"
+        error("Infeasible base problem")
     end
     # this is our root node of the binarytree
     root = BinaryNode(MyNodeData(base_model,feasible_x,[],[],lb,ub))

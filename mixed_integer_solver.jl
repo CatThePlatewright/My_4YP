@@ -1,4 +1,5 @@
 include("mixed_binary_solver.jl")
+using Test, ECOS
 # imported functions from mixed_binary_solver:
 # add_constraints, fix_variables(), build_unbounded_base_model()
 
@@ -32,9 +33,10 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars=colle
         term_status = "UNDEFINED"
     else 
         term_status = "INFEASIBLE"
+        error("Infeasible base problem")
+
     end
     # this is our root node of the binarytree
-    #TODO change node name
     root = BinaryNode(MyNodeData(base_model,feasible_x,[],[],lb,ub))
     node = root
 
@@ -101,61 +103,50 @@ function solve_base_model(base_model::Model,integer_vars)
     # natural variables relaxed to non-negative vars
     add_constraints(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
     optimize!(base_model)
-    
+    print(solution_summary(base_model))
 end
-function getClarabeldata(model::Model)
-    # access the Clarabel solver object
-    solver = JuMP.unsafe_backend(model).solver
-    # now you can get data etc
-    data = solver.data
-    P = data.P
-    q = data.q
-    A = data.A
-    b = data.b
-    s = solver.cones
-    return P,q,A,b,s
-end
-function rewrite_in_Clarabel(P,q,A,b,cones)
-    settings = Clarabel.Settings(max_iter = 15, verbose = false)
-    solver   = Clarabel.Solver()
-    Clarabel.setup!(solver, P, q, A, b, cones, settings)
-    result = Clarabel.solve!(solver)
-    return result
-end
+
 optimizer = Clarabel.Optimizer
-n = 5
-k= 8
-m = 5 # how many integer variables (if mixed integer problem)
+n = 2
+k= 1
+m = 2 # how many integer variables (if mixed integer problem)
+integer_vars = sample(1:n, m, replace = false)
+sort!(integer_vars)
+println("Integer variables : ", integer_vars)
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
 c = rand(Float64,n)
 ϵ = 0.00000001
 
-base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
-integer_vars = sample(1:n, m, replace = false)
-sort!(integer_vars)
-solve_base_model(base_model,integer_vars)
-P,q,A,b,s = getClarabeldata(base_model)
-Clarabel_result = rewrite_in_Clarabel(P,q,A,b,s)
-println(Clarabel_result)
-root, term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
-@test term_status == "OPTIMAL"
-println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
+function main()
+    
 
-# check against binary solver in Gurobi
-exact_model = Model(Gurobi.Optimizer)
-set_optimizer_attribute(exact_model, "OutputFlag", 0)
-x = @variable(exact_model, x[i = 1:n])
-for bin in integer_vars
-    set_integer(x[bin])
+    # check against binary solver in Gurobi
+    exact_model = Model(Gurobi.Optimizer)
+    set_optimizer_attribute(exact_model, "OutputFlag", 0)
+    x = @variable(exact_model, x[i = 1:n])
+    for bin in integer_vars
+        set_integer(x[bin])
+    end
+    @objective(exact_model, Min, x'*Q*x + c'*x)
+    @constraint(exact_model, sum_constraint, sum(x) == k)
+    optimize!(exact_model)
+    println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
+
+
+    
+    base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
+
+    solve_base_model(base_model,integer_vars)
+
+    root, term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
+    @test term_status == "OPTIMAL"
+    println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
+
+
+    tol = 1e-4
+
+    @test isapprox(norm(root.data.solution_x - Float64.(value.(exact_model[:x]))), zero(Float64), atol=tol)
+    @test isapprox(root.data.ub, Float64(objective_value(exact_model)), atol=tol)
+        
 end
-@objective(exact_model, Min, x'*Q*x + c'*x)
-@constraint(exact_model, sum_constraint, sum(x) == k)
-optimize!(exact_model)
-println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
-
-using Test
-tol = 1e-4
-
-@test isapprox(norm(root.data.solution_x - Float64.(value.(exact_model[:x]))), zero(Float64), atol=tol)
-@test isapprox(root.data.ub, Float64(objective_value(exact_model)), atol=tol)
