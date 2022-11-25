@@ -13,13 +13,14 @@ for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
 function add_constraints(model::Model, lb, ub, binary_vars)
     x = model[:x]
     x = [x[i] for i in binary_vars]
-    println(x)
+    println("Adding constraints for vars: ", x)
     @constraint(model, lb_constraint, x.>= lb)
     if isnothing(ub)
         @constraint(model, ub_constraint, x.<= 1000000000)
     else
         @constraint(model, ub_constraint, x.<= ub)
     end
+    print(model)
     return
 end
 
@@ -90,6 +91,10 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     # force the branching variables to fixed value
     fix_variables(x, fixed_x_indices, fix_x_values)
     optimize!(model)
+    if optimizer == Clarabel.Optimizer
+        solver = JuMP.unsafe_backend(model).solver
+        println("SOLVER VARIABLES: ", solver.variables)
+    end
     if termination_status(model) == MOI.OPTIMAL
         return objective_value(model), value.(x)
     else 
@@ -141,7 +146,7 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, binary_vars=collec
     
     # 1) compute L1, lower bound on p* of mixed Boolean problem (p.5 of BnB paper)
     add_constraints(base_model, zeros(length(binary_vars)), ones(length(binary_vars)), binary_vars) # binary case would make ub and lb constraints redundant!
-    optimize!(base_model)
+    optimize!(base_model) #TODO when integer_vars is not default, this results in infeasible base problem
 
     if termination_status(base_model) == MOI.OPTIMAL
         lb =objective_value(base_model)

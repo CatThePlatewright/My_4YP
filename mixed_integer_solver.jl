@@ -107,9 +107,9 @@ function solve_base_model(base_model::Model,integer_vars)
 end
 
 optimizer = Clarabel.Optimizer
-n = 2
-k= 1
-m = 2 # how many integer variables (if mixed integer problem)
+n = 4
+k= 6
+m = 3 # how many integer variables (if mixed integer problem)
 integer_vars = sample(1:n, m, replace = false)
 sort!(integer_vars)
 println("Integer variables : ", integer_vars)

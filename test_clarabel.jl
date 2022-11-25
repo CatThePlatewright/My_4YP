@@ -1,0 +1,10 @@
+include("getClarabel.jl")
+settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+test_solver   = Clarabel.Solver()
+
+Clarabel.setup!(test_solver, P, q, Aleft2, bleft2, conesleft2, settings)
+println("A: ", Aleft2)
+println(bleft2)
+println(conesleft2)
+result = Clarabel.solve!(test_solver)
+println("RESULT: ", result.x)

@@ -22,19 +22,29 @@ function getAugmentedData(P,q,A,b,cones,n)
     end
     return P,q,A,b, cones
 end
-function solve_in_Clarabel(solver)
+function solve_in_Clarabel(myA,myb,mycones)
     # solver.data.b .= b # !!!!! ".=" overwrites each element of b (broadcast "=" operator) instead of pointing to another object!!!
-    result = Clarabel.solve!(solver)
-    return result
+    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+    test_solver   = Clarabel.Solver()
+    Clarabel.setup!(test_solver, P, q, myA, myb, mycones, settings)
+    println("SOLVE IN CLARABEL IS USING ")
+    println("WE UPDATED A TO: ", myA)
+
+    println("WE UPDATED B TO: ", myb)
+
+    println("WE UPDATED s TO: ", mycones)
+    #println("SOLVER VARS: ", solver.variables)
+    solution = Clarabel.solve!(test_solver)
+    return solution
 end
 
 
 function add_fixing_constraint(A, b::Vector, cones, n::Int, fixed_x_indices, fix_values)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
-        println("Updating vector b.........")
+        println("add_fixing_constraint for indices: ", fixed_x_indices)
         for index in fixed_x_indices, j in 1:length(fixed_x_indices)
             if fix_values[j] == 0.0 # setting to 0 with ZeroConeT does not work: it is ignored!
-                A[end-n+index,end-n+index] = -1
+                A[end-n+index,end-n+index] = -1 # TODO: A might not need to be updated
                 b[end-n+index] = fix_values[j] 
                 cones[end-n+index]= Clarabel.ZeroConeT(1) 
             else
@@ -43,17 +53,18 @@ function add_fixing_constraint(A, b::Vector, cones, n::Int, fixed_x_indices, fix
                 cones[end-n+index]= Clarabel.ZeroConeT(1)# this is for x[index] == value
             end
         end
-        # crucial step: relax any variables not in these vectors is currently fixed (i.e. b[i+1]==b[i+1+n])
-        # (because we changed to a different branch but model is same for all nodes)
-        for i in 1:n
-            if ~(i in fixed_x_indices) && (cones[end-n+i]== Clarabel.ZeroConeT(1))
-                b[end-n+i] = 0
-                A[end-n+i, end-n+i] = -1
-                cones[end-n+i]= Clarabel.NonnegativeConeT(1)
-            end
+        
+    end
+    return A, b, cones
+
+end
+function relax_vars(A,b,cones,n,fixed_x_indices)
+    for i in 1:n
+        if ~(i in fixed_x_indices) && (cones[end-n+i]== Clarabel.ZeroConeT(1))
+            b[end-n+i] = 0
+            A[end-n+i, end-n+i] = -1 # TODO: A might not need to be updated
+            cones[end-n+i]= Clarabel.NonnegativeConeT(1)
         end
-        
-        
     end
 end
 ### OVERWRITE THE FOLLOWING FUNCTIONS FROM BINARY_SOLVER.JL
@@ -67,25 +78,36 @@ function compute_ub(solver,n::Int, integer_vars,fixed_x_indices, fix_x_values, r
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     cones = solver.cones.cone_specs
 
+    # crucial step: relax any variables not in these vectors is currently fixed (i.e. b[i+1]==b[i+1+n])
+    # (if we changed to a different branch but solver is same for all nodes)
+    if ~isnothing(fixed_x_indices)
+        relax_vars(A,b,cones,n,fixed_x_indices) 
+    end
+
     # set the relaxed variables equal to the rounded binary values
-    # if these are in the set of binary variables    
-    rounded_bounds = [round(value(relaxed_vars[i])) for i in integer_vars]
-    
+    # if these are in the set of binary variables   
+    rounded_bounds =  [round(value(relaxed_vars[i])) for i in integer_vars]
     println("rounded bounds vector: ", rounded_bounds)
-    for index in 1:lastindex(rounded_bounds)
+
+    for (index,j) = zip(integer_vars, 1:lastindex(rounded_bounds))
+        println("ROUNDING VARIABLE ", index, " TO ", rounded_bounds[j])
         A[end-n+index,end-n+index] = -1
-        b[end-n+index] = -rounded_bounds[index]
+        b[end-n+index] = -rounded_bounds[j]
         cones[end-n+index]= Clarabel.ZeroConeT(1)# this is for x[index] == value
     end
+    println("B before add_fixing_constraint after rounding:", b,cones)
     # force the branching variables to fixed value
-    add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
+    A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
+    println("After adding fixed vars b and s: ", b,cones)
     debug_b = deepcopy(solver.data.b)
-    solution = solve_in_Clarabel(solver) 
+    
+    solution = solve_in_Clarabel(A,b,cones) 
     if solution.status== Clarabel.SOLVED
-        return solution.obj_val, solution.x, debug_b
+        println("Values of upper bound solution (feasible)", solution.x)
+        return solution.obj_val, solution.x, debug_b, A,b, cones
     else 
         println("Infeasible or unbounded problem for ub computation")
-        return Inf, [Inf for _ in 1:n], debug_b
+        return Inf, [Inf for _ in 1:n], debug_b,A,b,cones
     end
 end
 
@@ -96,19 +118,21 @@ function compute_lb(solver, n, fixed_x_indices, fix_x_values)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     cones = solver.cones.cone_specs
-    add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
-    println("after add_fixing_constraint, b: ", b)
+    if ~isnothing(fixed_x_indices)
+        relax_vars(A,b,cones,n,fixed_x_indices) 
+    end
+    A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
+    #=println("after add_fixing_constraint, b: ", b)
     println("after add_fixing_constraint, cones: ", cones)
-    println("after add_fixing_constraint, A: ", A)
-
-
-    solution = solve_in_Clarabel(solver)
+    println("after add_fixing_constraint, A: ", A)=#
+    
+    solution = solve_in_Clarabel(A,b,cones)
     if solution.status== Clarabel.SOLVED
         println("Values of relaxed solution ", solution.x)
-        return solution, solution.obj_val, solution.x
+        return solution, solution.obj_val, solution.x, A,b,cones
     else 
         println("Infeasible or unbounded problem for lb computation")
-        return solution, Inf, [Inf for _ in 1:n]
+        return solution, Inf, [Inf for _ in 1:n],A,b,cones
     end
 end
 
@@ -129,11 +153,12 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     root.data.debug_b = debug_b
     node = root
     println("root has ub: ", root.data.ub)
+    iteration = 0
 
     # 3) start branching
-    while term_status == "UNDEFINED" && node.data.depth <= 1
+    while term_status == "UNDEFINED" 
         println("current node at depth ", node.data.depth, " has x as ", node.data.solution.x)
-        x = node.data.solution.x #this is the lb solution vector so the relaxed solution
+        x = node.data.solution.x #the relaxed solution from compute_lb, != solution_x
         # which edge to split along i.e. which variable to fix next?
         fixed_x_index = get_next_variable_to_fix_to_integer(x, integer_vars, node.data.fixed_x_ind) 
         println("GOT NEXT VAR TO FIX: ", fixed_x_index, " TO FLOOR : ", floor(x[fixed_x_index]), " TO CEIL ", ceil(x[fixed_x_index]))
@@ -143,9 +168,9 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         println("")
-        lb_solution,l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left) 
+        lb_solution,l̃, relaxed_x_left,Aleft,bleft,conesleft = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left) 
         println("solved for l̃: ", l̃)
-        ũ, feasible_x_left, debug_b= compute_ub(left_solver, n,integer_vars,fixed_x_indices, fixed_x_left, relaxed_x_left)
+        ũ, feasible_x_left, debug_b, Aleft2, bleft2,conesleft2= compute_ub(left_solver, n,integer_vars,fixed_x_indices, fixed_x_left, relaxed_x_left)
         println("solved for ũ: ", ũ)
         println("fixed indices on left branch are : ", fixed_x_indices, " to ", fixed_x_left)
         
@@ -157,10 +182,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the right child problem to get l-bar and u-bar
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, ceil(x[fixed_x_index])) 
-        lb_solution_right, l̄, relaxed_x_right = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right)
+        lb_solution_right, l̄, relaxed_x_right,Ar,br,conesr = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right)
         
         println("solved for l̄: ", l̄)
-        ū, feasible_x_right, debug_b= compute_ub(right_solver, n, integer_vars, fixed_x_indices, fixed_x_right, relaxed_x_right)
+        ū, feasible_x_right, debug_b,Ar2,br2,conesr2= compute_ub(right_solver, n, integer_vars, fixed_x_indices, fixed_x_right, relaxed_x_right)
         println("solved for ū: ", ū)
         println("fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)
         #create new child node (right)
@@ -182,14 +207,19 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # decide which child node to branch on next: pick the one with the lowest lb
         node = branch_from_node(root) #start from root at every iteration, trace down to the max. depth
         update_best_lb(node)
-        # CRUCIAL: solve again to get the correct x vector but feasible x solution stored in data.solution_x
-        compute_lb(node.data.solver,n, node.data.fixed_x_ind, node.data.fixed_x_values) #TODO: check the args!
+
+        # CRUCIAL: solve again to get the correct relaxed solution (see line 2 after "while") 
+        # but note that feasible x solution stored in data.solution_x
+        compute_lb(node.data.solver,n, node.data.fixed_x_ind, node.data.fixed_x_values) 
 
         println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
         println(" ")
         term_status = termination_status_bnb(root.data.ub,root.data.lb, ϵ)
-
+        iteration += 1
+        println("iteration : ", iteration)
     end
+    #return iteration,Aleft,bleft,conesleft,Aleft2,bleft2,conesleft2
+    
     return root, term_status
 end
 
@@ -200,9 +230,12 @@ old_model = build_unbounded_base_model(optimizer,n,k,Q,c)
 integer_vars = sample(1:n, m, replace = false)
 sort!(integer_vars)
 solve_base_model(old_model,integer_vars)
+
 #solve in Clarabel the relaxed problem
 
 # NOTE: b and solver.status must be reset at each bnb iteration, P,q,A remain 
+# PROBLEM 25/11: lb AND ub are wrong when setting variable to 0.0, constraints are ignored
+# both for setting x[2] to 0.0 and for ROUNDING x's to the rounded values!!
 # check info status to find the point where it diverges with JuMP model
 P,q,A,b, cones= getClarabelData(old_model)
 P,q,A,b, cones= getAugmentedData(P,q,A,b,cones,n)
@@ -213,7 +246,8 @@ Clarabel.setup!(solver, P, q, A, b, cones, settings)
 
 result = Clarabel.solve!(solver)
 
+# start bnb loop
 println("STARTING CLARABEL BNB LOOP ")
+#i,Aleft,bleft,conesleft,Aleft2,bleft2,conesleft2 = branch_and_bound_solve(solver, result,n,ϵ, integer_vars)
 root, term_status = branch_and_bound_solve(solver, result,n,ϵ, integer_vars)
-
 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
