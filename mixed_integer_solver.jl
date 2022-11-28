@@ -107,12 +107,13 @@ function solve_base_model(base_model::Model,integer_vars)
 end
 
 optimizer = Clarabel.Optimizer
-n = 4
-k= 6
-m = 3 # how many integer variables (if mixed integer problem)
+n = 2
+k= 1
+m = 1 # how many integer variables (if mixed integer problem)
 integer_vars = sample(1:n, m, replace = false)
-sort!(integer_vars)
+sort!(integer_vars) 
 println("Integer variables : ", integer_vars)
+println("CAREFUL: if comparing with getClarabel.jl, integer_vars may be different sample!!!")
 Q = Matrix{Float64}(I, n, n) 
 Random.seed!(1234)
 c = rand(Float64,n)

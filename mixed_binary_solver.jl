@@ -16,7 +16,7 @@ function add_constraints(model::Model, lb, ub, binary_vars)
     println("Adding constraints for vars: ", x)
     @constraint(model, lb_constraint, x.>= lb)
     if isnothing(ub)
-        @constraint(model, ub_constraint, x.<= 1000000000)
+        @constraint(model, ub_constraint, x.<= 1e3)
     else
         @constraint(model, ub_constraint, x.<= ub)
     end
@@ -44,21 +44,27 @@ end
 
 function build_unbounded_base_model(optimizer, n::Int,k::Int,Q::Matrix,c::Vector)
     model = Model()
-    if optimizer == Gurobi.Optimizer
-        set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
-    elseif optimizer == Clarabel.Optimizer
-        set_optimizer(model,optimizer)
-        set_optimizer_attribute(model, "verbose", false)
-        # do this so that the solver doesn't scale the data
-        set_optimizer_attribute(model, "equilibrate_enable", false)
-    end
+    setOptimizer(model, optimizer)
     x = @variable(model, x[1:n])
     @objective(model, Min, x'*Q*x + c'*x)
     @constraint(model, sum_constraint, sum(x) == k)
     return model
 end
 
-
+function setOptimizer(model, optimizer)
+    if optimizer == Gurobi.Optimizer
+        set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
+    elseif optimizer == Clarabel.Optimizer
+        set_optimizer(model,optimizer)
+        set_optimizer_attribute(model, "verbose", true)
+        # do this so that the solver doesn't scale the data
+        set_optimizer_attribute(model, "equilibrate_enable", false)
+    elseif optimizer == ECOS.Optimizer
+        set_optimizer(model,optimizer)
+        set_optimizer_attribute(model, "maxit", 100)
+    end
+    
+end
 " returns the upper bound computed when given the model as well as the rounded variable solution.
 For Mixed_binary_solver: variables of indices from binary_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
@@ -69,14 +75,7 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     # if these are in the set of binary variables    
     rounded_bounds = [round(value(relaxed_vars[i])) for i in binary_vars]
     # when model is a copy of another model, need to set the optimizer again
-    if optimizer == Gurobi.Optimizer
-        set_optimizer(model, optimizer_with_attributes(optimizer, "OutputFlag" => 0))
-    elseif optimizer == Clarabel.Optimizer
-        set_optimizer(model,optimizer)
-        set_optimizer_attribute(model, "verbose", false)
-        # do this so that the solver doesn't scale the data
-        set_optimizer_attribute(model, "equilibrate_enable", false)
-    end
+    setOptimizer(model, optimizer)
     println("rounded bounds vector: ", rounded_bounds)
 
     # con1 and con2 are of length rounded bounds/ binary_vars!
@@ -90,11 +89,11 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
     
     # force the branching variables to fixed value
     fix_variables(x, fixed_x_indices, fix_x_values)
+    #printsolvervars(model, "after ub")
+
     optimize!(model)
-    if optimizer == Clarabel.Optimizer
-        solver = JuMP.unsafe_backend(model).solver
-        println("SOLVER VARIABLES: ", solver.variables)
-    end
+    printsolvervars(model, "after ub")
+
     if termination_status(model) == MOI.OPTIMAL
         return objective_value(model), value.(x)
     else 
@@ -102,14 +101,28 @@ function compute_ub(model::Model, optimizer, binary_vars,fixed_x_indices, fix_x_
         return Inf, [Inf for _ in 1:length(relaxed_vars)]
     end
 end
+function printsolvervars(model, message)
+    if optimizer == Clarabel.Optimizer
+        solver = JuMP.unsafe_backend(model).solver
+        println("SOLVER VARIABLES ",message," ", solver.variables)
+        println("P in solver: ", solver.data.P)
+        println("q in solver: ", solver.data.q)
+        println("A in solver: ", solver.data.A)
+        println("b in solver: ", solver.data.b)
+        println("cones in solver: ", solver.cones.cone_specs)
 
+    end
+    
+end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
 function compute_lb(model::Model, fixed_x_indices, fix_x_values)
     x = model[:x]
+    printsolvervars(model, "before lb")
     fix_variables(x,fixed_x_indices,fix_x_values)
     optimize!(model)
+    printsolvervars(model, "after lb")
     if termination_status(model) == MOI.OPTIMAL
         println("Values of relaxed solution ", value.(x))
         return objective_value(model), x

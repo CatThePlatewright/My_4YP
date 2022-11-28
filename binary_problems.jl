@@ -36,5 +36,6 @@ binary_model = build_unbounded_cardinality_model(optimizer,n,A)
 binary_vars = sample(1:n, m, replace = false)
 
 x = binary_model[:x]
+set_binary(x[i] for i in binary_vars)
 optimize!(binary_model)
 println("Exact solution: ", objective_value(binary_model) , " using ", value.(x))

@@ -22,20 +22,28 @@ function getAugmentedData(P,q,A,b,cones,n)
     end
     return P,q,A,b, cones
 end
-function solve_in_Clarabel(myA,myb,mycones)
+function reset_solver!(solver)
+    solver.variables = Clarabel.DefaultVariables{Float64}(n, solver.cones)
+    solver.residuals = Clarabel.DefaultResiduals{Float64}(n, solver.data.m)
+    solver.info = Clarabel.DefaultInfo{Float64}()
+    solver.prev_vars = Clarabel.DefaultVariables{Float64}(n, solver.cones)
+    solver.solution = Clarabel.DefaultSolution{Float64}(solver.data.m,n)
+end
+function solve_in_Clarabel(solver)
+    # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
+    reset_solver!(solver)
     # solver.data.b .= b # !!!!! ".=" overwrites each element of b (broadcast "=" operator) instead of pointing to another object!!!
-    settings = Clarabel.Settings(verbose = true, equilibrate_enable = false, max_iter = 100)
-    test_solver   = Clarabel.Solver()
-    Clarabel.setup!(test_solver, P, q, myA, myb, mycones, settings)
-    println("Solver variables inside solve_in_Clarabel(): ", test_solver.variables)
-    println("P in solver: ", test_solver.data.P)
-    println("q in solver: ", test_solver.data.q)
-    println("A in solver: ", test_solver.data.A, test_solver.data.A == myA)
-    println("b in solver: ", test_solver.data.b, test_solver.data.b == myb)
-    println("cones in solver: ", test_solver.cones.cone_specs, test_solver.cones.cone_specs==mycones)
-    solution = Clarabel.solve!(test_solver)
+    println("Solver variables inside solve_in_Clarabel(): ", solver.variables)
+    println("P in solver: ", solver.data.P)
+    println("q in solver: ", solver.data.q)
+    println("A in solver: ", solver.data.A)
+    println("b in solver: ", solver.data.b)
+    println("cones in solver: ", solver.cones.cone_specs)
 
-    return solution
+    
+    result = Clarabel.solve!(solver)
+
+    return result
 end
 
 
@@ -95,13 +103,12 @@ function compute_ub(solver,n::Int, integer_vars,fixed_x_indices, fix_x_values, r
         b[end-n+index] = -rounded_bounds[j]
         cones[end-n+index]= Clarabel.ZeroConeT(1)# this is for x[index] == value
     end
-    println("B before add_fixing_constraint after rounding:", b,cones)
+    #println("B before add_fixing_constraint after rounding:", b,cones)
     # force the branching variables to fixed value
     A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
-    println("After adding fixed vars b and s: ", b,cones)
+    #println("After adding fixed vars b and s: ", b,cones)
     debug_b = deepcopy(solver.data.b)
-    
-    solution = solve_in_Clarabel(A,b,cones) 
+    solution = solve_in_Clarabel(solver) 
     if solution.status== Clarabel.SOLVED
         println("Values of upper bound solution (feasible)", solution.x)
         return solution.obj_val, solution.x, debug_b, A,b, cones
@@ -122,11 +129,10 @@ function compute_lb(solver, n, fixed_x_indices, fix_x_values)
         relax_vars(A,b,cones,n,fixed_x_indices) 
     end
     A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
-    #=println("after add_fixing_constraint, b: ", b)
-    println("after add_fixing_constraint, cones: ", cones)
-    println("after add_fixing_constraint, A: ", A)=#
     
-    solution = solve_in_Clarabel(A,b,cones)
+    println("Solver vars before solve in compute lb: ", solver.variables)
+    solution = solve_in_Clarabel(solver)
+    
     if solution.status== Clarabel.SOLVED
         println("Values of relaxed solution ", solution.x)
         return solution, solution.obj_val, solution.x, A,b,cones
@@ -135,6 +141,7 @@ function compute_lb(solver, n, fixed_x_indices, fix_x_values)
         return solution, Inf, [Inf for _ in 1:n],A,b,cones
     end
 end
+
 
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n))
@@ -232,9 +239,12 @@ solve_base_model(old_model,integer_vars)
 #solve in Clarabel the relaxed problem
 
 # NOTE: b and solver.status must be reset at each bnb iteration, P,q,A remain 
+# PROBLEM 25/11: lb AND ub are wrong when setting variable to 0.0, constraints are ignored
+# both for setting x[2] to 0.0 and for ROUNDING x's to the rounded values!!
+# check info status to find the point where it diverges with JuMP model
 P,q,A,b, cones= getClarabelData(old_model)
 P,q,A,b, cones= getAugmentedData(P,q,A,b,cones,n)
-settings = Clarabel.Settings(verbose = true, equilibrate_enable = false, max_iter = 100)
+settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
 solver   = Clarabel.Solver()
 
 Clarabel.setup!(solver, P, q, A, b, cones, settings)
@@ -242,7 +252,6 @@ Clarabel.setup!(solver, P, q, A, b, cones, settings)
 result = Clarabel.solve!(solver)
 println("INITIAL VARS: ", solver.variables)
 
-println("Relaxed base solution: ", result)
 
 # start bnb loop
 println("STARTING CLARABEL BNB LOOP ")
