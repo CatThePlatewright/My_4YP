@@ -34,10 +34,11 @@ end
 
                 optimizer, n, k, Q,c,ϵ = simple_QP_params(FloatT)
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
-                (root,status) = branch_and_bound_solve(base_model,optimizer,n,ϵ)
+                solve_base_model(base_model,collect(1:n))
+
+                (root,status) = branch_and_bound_solve(base_model,optimizer,n,ϵ,collect(1:n))
                 # put a termination status check function in your bnb solver, 
                 # checking if lb=ub
-                println("HEERE: ",typeof(status))
                 @test status  == "OPTIMAL"
 
                 # check against binary solver in Gurobi
@@ -63,7 +64,8 @@ end
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
                 binary_vars = sample(1:n, m, replace = false)
                 sort!(binary_vars)
-                println(binary_vars)
+                println("Binary Vars: ", binary_vars)
+                solve_base_model(base_model,binary_vars)
                 root,term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, binary_vars)
                 @test term_status == "OPTIMAL"
                 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
@@ -91,13 +93,16 @@ end
                 ϵ = 0.00000001
                 
                 base_model_infeasible = build_unbounded_base_model(optimizer,n,k,Q,c)
+
                 x = base_model_infeasible[:x]
                 #adding linear constraints to form an binary infeasible trapeze
                 @constraint(base_model_infeasible, c1, x[1] + x[2] >= 0.5) 
                 @constraint(base_model_infeasible, c2, - x[1] + x[2] >= -0.5) 
                 @constraint(base_model_infeasible, c3, - x[1] + x[2] <= 0.5) 
                 @constraint(base_model_infeasible, c4, x[1] + x[2] <= 1.5) 
-                root,term_status = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ)
+                solve_base_model(base_model_infeasible, collect(1:n))
+                
+                root,term_status = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ, collect(1:n))
                 print(root.data.model)
 # TODO: unbounded case??? i.e. dual infeasible (= primal unbounded)
                 

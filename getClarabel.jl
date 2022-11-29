@@ -1,21 +1,11 @@
 using SparseArrays
 include("mixed_integer_solver.jl")
-function getClarabelData(model::Model)
-    # access the Clarabel solver object
-    solver = JuMP.unsafe_backend(model).solver
-    # now you can get data etc
-    data = solver.data
-    P = data.P
-    q = data.q
-    A = data.A
-    b = data.b
-    s = solver.cones.cone_specs # ATTENTION: this does not give the right format but StackOverFlowError!
-    return P,q,A,b,s
-end
-function getAugmentedData(P,q,A,b,cones,n)
-    A2 = sparse(collect(1:n),collect(1:n) ,-1* ones(n))
-    #A = [A;A2] works too
-    A = sparse_vcat(A,A2)
+include("direct_Clarabel_one_solver.jl")
+function getAugmentedData(P,q,A,b,cones,integer_vars)
+    m = length(integer_vars)
+    A2 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m))
+    A3 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m))
+    A = sparse_vcat(A,A2, A3)
     b = vcat(b,zeros(n))
     for i = 1:n
         push!(cones,Clarabel.NonnegativeConeT(1)) # this is so that we can modify it to ZeroconeT afterwards
@@ -233,14 +223,13 @@ solve_base_model(old_model,integer_vars)
 
 # NOTE: b and solver.status must be reset at each bnb iteration, P,q,A remain 
 P,q,A,b, cones= getClarabelData(old_model)
-P,q,A,b, cones= getAugmentedData(P,q,A,b,cones,n)
+P,q,A,b, cones= getAugmentedData(P,q,A,b,cones,integer_vars)
 settings = Clarabel.Settings(verbose = true, equilibrate_enable = false, max_iter = 100)
 solver   = Clarabel.Solver()
 
 Clarabel.setup!(solver, P, q, A, b, cones, settings)
 
 result = Clarabel.solve!(solver)
-println("INITIAL VARS: ", solver.variables)
 
 println("Relaxed base solution: ", result)
 

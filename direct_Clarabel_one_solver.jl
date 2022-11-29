@@ -9,13 +9,14 @@ function getClarabelData(model::Model)
     q = data.q
     A = data.A
     b = data.b
-    s = solver.cones.cone_specs # ATTENTION: this does not give the right format but StackOverFlowError!
+    s = solver.cones.cone_specs
     return P,q,A,b,s
 end
-function getAugmentedData(P,q,A,b,cones,n)
-    A2 = sparse(collect(1:n),collect(1:n) ,-1* ones(n))
-    #A = [A;A2] works too
-    A = sparse_vcat(A,A2)
+function getAugmentedData(P,q,A,b,cones,integer_vars)
+    m = length(integer_vars)
+    A2 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m))
+    A3 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m))
+    A = sparse_vcat(A,A2, A3)
     b = vcat(b,zeros(n))
     for i = 1:n
         push!(cones,Clarabel.NonnegativeConeT(1)) # this is so that we can modify it to ZeroconeT afterwards
@@ -31,46 +32,46 @@ function reset_solver!(solver)
 end
 function solve_in_Clarabel(solver)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
-    reset_solver!(solver)
+    reset_solver!(solver) #TODO: maybe not needed?
     # solver.data.b .= b # !!!!! ".=" overwrites each element of b (broadcast "=" operator) instead of pointing to another object!!!
     println("Solver variables inside solve_in_Clarabel(): ", solver.variables)
-    println("P in solver: ", solver.data.P)
-    println("q in solver: ", solver.data.q)
     println("A in solver: ", solver.data.A)
     println("b in solver: ", solver.data.b)
-    println("cones in solver: ", solver.cones.cone_specs)
+    println("cones in solver: ", solver.cones)
 
-    
     result = Clarabel.solve!(solver)
 
     return result
 end
 
 
-function add_fixing_constraint(A, b::Vector, cones, n::Int, fixed_x_indices, fix_values)    
+function add_branching_constraint(A, b::Vector, n::Int, fixed_x_indices, fix_values, bounds)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
-        println("add_fixing_constraint for indices: ", fixed_x_indices)
-        for index in fixed_x_indices, j in 1:length(fixed_x_indices)
-            if fix_values[j] == 0.0 # setting to 0 with ZeroConeT does not work: it is ignored!
-                A[end-n+index,end-n+index] = -1 # TODO: A might not need to be updated
-                b[end-n+index] = fix_values[j] 
-                cones[end-n+index]= Clarabel.ZeroConeT(1) 
-            else
-                A[end-n+index,end-n+index] = -1
-                b[end-n+index] = -fix_values[j] 
-                cones[end-n+index]= Clarabel.ZeroConeT(1)# this is for x[index] == value
+        println("add_branching_constraint for indices: ", fixed_x_indices)
+        for (i,j,k) in zip(fixed_x_indices, fix_values, bounds)
+            if k == "ub"
+                println("Setting ub of variable ",i," to ", j)
+                # this is for x[i] <= value
+                A[end-n+i,end-n+i] = 1
+                b[end-n+i] = j
+            elseif k == "lb"
+                println("Setting lb of variable ",i," to ", j)
+                # this is for x[i] >= value since we have Clarabel.NonnegativeConeT(1)
+                A[end-n+i,end-n+i] = -1
+                b[end-n+i] = -j
             end
         end
+            
         
     end
-    return A, b, cones
+    return A, b
 
 end
 function relax_vars(A,b,cones,n,fixed_x_indices)
     for i in 1:n
-        if ~(i in fixed_x_indices) && (cones[end-n+i]== Clarabel.ZeroConeT(1))
+        if ~(i in fixed_x_indices) 
             b[end-n+i] = 0
-            A[end-n+i, end-n+i] = -1 # TODO: A might not need to be updated
+            A[end-n+i, end-n+i] = -1
             cones[end-n+i]= Clarabel.NonnegativeConeT(1)
         end
     end
@@ -80,7 +81,7 @@ end
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(solver,n::Int, integer_vars,fixed_x_indices, fix_x_values, relaxed_vars)
+function compute_ub(solver,n::Int, integer_vars,fixed_x_indices, fix_x_values, bounds,relaxed_vars)
     solver = deepcopy(solver)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
@@ -100,12 +101,12 @@ function compute_ub(solver,n::Int, integer_vars,fixed_x_indices, fix_x_values, r
     for (index,j) = zip(integer_vars, 1:lastindex(rounded_bounds))
         println("ROUNDING VARIABLE ", index, " TO ", rounded_bounds[j])
         A[end-n+index,end-n+index] = -1
-        b[end-n+index] = -rounded_bounds[j]
+        b[end-n+index] = -rounded_bounds[j] #TODO what about this?
         cones[end-n+index]= Clarabel.ZeroConeT(1)# this is for x[index] == value
     end
-    #println("B before add_fixing_constraint after rounding:", b,cones)
+    #println("B before add_branching_constraint after rounding:", b,cones)
     # force the branching variables to fixed value
-    A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
+    A, b, cones = add_branching_constraint(A,b,cones,n,fixed_x_indices,fix_x_values, bounds)
     #println("After adding fixed vars b and s: ", b,cones)
     debug_b = deepcopy(solver.data.b)
     solution = solve_in_Clarabel(solver) 
@@ -128,7 +129,7 @@ function compute_lb(solver, n, fixed_x_indices, fix_x_values)
     if ~isnothing(fixed_x_indices)
         relax_vars(A,b,cones,n,fixed_x_indices) 
     end
-    A, b, cones = add_fixing_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
+    A, b, cones = add_branching_constraint(A,b,cones,n,fixed_x_indices,fix_x_values)
     
     println("Solver vars before solve in compute lb: ", solver.variables)
     solution = solve_in_Clarabel(solver)
