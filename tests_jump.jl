@@ -5,7 +5,7 @@ include("mixed_binary_solver.jl")
 #if not run in full test setup, just do it for one float type
 @isdefined(UnitTestFloats) || (UnitTestFloats = [Float64])
 function simple_QP_params(Type::Type{T}) where {T <: AbstractFloat} 
-    optimizer = Gurobi.Optimizer
+    optimizer = Clarabel.Optimizer
     n = 5
     k = 3
     Q = Matrix{T}(I, n, n) #try sth else
@@ -36,13 +36,13 @@ end
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
                 solve_base_model(base_model,collect(1:n))
 
-                (root,status) = branch_and_bound_solve(base_model,optimizer,n,ϵ,collect(1:n))
+                (root,status) = branch_and_bound_solve_jump(base_model,optimizer,n,ϵ,collect(1:n))
                 # put a termination status check function in your bnb solver, 
                 # checking if lb=ub
                 @test status  == "OPTIMAL"
 
                 # check against binary solver in Gurobi
-                bin_model = Model(optimizer)
+                bin_model = Model(Gurobi.Optimizer)
                 set_optimizer_attribute(bin_model, "OutputFlag", 0)
                 binary_model = build_base_model(bin_model,n,k,Q,c,collect(1:n))
                 optimize!(binary_model)
@@ -52,7 +52,7 @@ end
 
             end
             @testset "feasible_mixed_binary" begin
-                optimizer = Gurobi.Optimizer
+                optimizer = Clarabel.Optimizer
                 n = 8
                 k= 5
                 m = 4 # how many binary variables
@@ -64,14 +64,14 @@ end
                 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
                 binary_vars = sample(1:n, m, replace = false)
                 sort!(binary_vars)
-                println("Binary Vars: ", binary_vars)
+                println("Integer Vars: ", binary_vars)
                 solve_base_model(base_model,binary_vars)
-                root,term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, binary_vars)
+                root,term_status = branch_and_bound_solve_jump(base_model,optimizer,n,ϵ, binary_vars)
                 @test term_status == "OPTIMAL"
                 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
                 # check against binary solver in Gurobi
-                bin_model = Model(optimizer)
+                bin_model = Model(Gurobi.Optimizer)
                 set_optimizer_attribute(bin_model, "OutputFlag", 0)
                 binary_model = build_base_model(bin_model,n,k,Q,c,binary_vars)
                 optimize!(binary_model)
@@ -84,7 +84,7 @@ end
 
             @testset "primal infeasible" begin
                 println("Starting Primal Infeasible Test")
-                optimizer = Gurobi.Optimizer
+                optimizer = Clarabel.Optimizer
                 n = 2
                 k= 1
                 Q = Matrix{FloatT}(I, n, n) 
@@ -102,7 +102,7 @@ end
                 @constraint(base_model_infeasible, c4, x[1] + x[2] <= 1.5) 
                 solve_base_model(base_model_infeasible, collect(1:n))
                 
-                root,term_status = branch_and_bound_solve(base_model_infeasible,optimizer,n,ϵ, collect(1:n))
+                root,term_status = branch_and_bound_solve_jump(base_model_infeasible,optimizer,n,ϵ, collect(1:n))
                 print(root.data.model)
 # TODO: unbounded case??? i.e. dual infeasible (= primal unbounded)
                 

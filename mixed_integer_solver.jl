@@ -3,22 +3,24 @@ using Test, ECOS
 # imported functions from mixed_binary_solver:
 # add_constraints, fix_variables(), build_unbounded_base_model()
 
-optimizer = Clarabel.Optimizer
-n = 5
-k= 3
-m =3 # how many integer variables (if mixed integer problem)
-integer_vars = sample(1:n, m, replace = false)
-sort!(integer_vars) 
-println("Integer variables : ", integer_vars)
-println("CAREFUL: if comparing with getClarabel.jl, integer_vars may be different sample!!!")
-Q = Matrix{Float64}(I, n, n) 
-Random.seed!(1234)
-c = rand(Float64,n)
-ϵ = 0.00000001
+
+
 
 function main()
     
-
+    optimizer = Clarabel.Optimizer
+    n = 4
+    k= 7
+    m =4 # how many integer variables (if mixed integer problem)
+    integer_vars = sample(1:n, m, replace = false)
+    sort!(integer_vars) 
+    println("Integer variables : ", integer_vars)
+    println("CAREFUL: if comparing with getClarabel.jl, integer_vars may be different sample!!!")
+    Q = Matrix{Float64}(I, n, n) 
+    Random.seed!(1234)
+    c = rand(Float64,n)
+    ϵ = 0.00000001
+    tol = 1e-4
     # check against binary solver in Gurobi
     exact_model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(exact_model, "OutputFlag", 0)
@@ -37,12 +39,11 @@ function main()
 
     solve_base_model(base_model,integer_vars)
 
-    root, term_status = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
+    root, term_status = branch_and_bound_solve_jump(base_model,optimizer,n,ϵ, integer_vars)
     @test term_status == "OPTIMAL"
     println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
 
-    tol = 1e-4
 
     @test isapprox(norm(root.data.solution_x - Float64.(value.(exact_model[:x]))), zero(Float64), atol=tol)
     @test isapprox(root.data.ub, Float64(objective_value(exact_model)), atol=tol)

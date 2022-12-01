@@ -6,12 +6,12 @@ infinity = 1e3
 """ this code is used to provide a mixed-binary-program solver where
 the option of specifying which variables in x are binary is added to
 the initial first_bnb_example
-by default, branch_and_bound_solve() has this list of binary variables as the whole set of variables"""
+by default, branch_and_bound_solve_jump() has this list of binary variables as the whole set of variables"""
 
 " only constrains the variables that are either binary or integer/natural to their interval
 for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
     the rest of the variables are completely free"
-function add_constraints(model::Model, lb, ub, integer_vars)
+function add_constraints_jump(model::Model, lb, ub, integer_vars)
     x = model[:x]
     x = [x[i] for i in integer_vars]
     println("Adding constraints for vars: ", x)
@@ -26,14 +26,12 @@ function add_constraints(model::Model, lb, ub, integer_vars)
 end
 
 "set upper bound to floor of fix_values if branch is left, or set lower bound to ceil of fix_value if branch is right "
-function fix_variables(x, fixed_x_indices, fix_values, bounds)
+function branch_variables_jump(x, fixed_x_indices, fix_values, bounds)
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
         for (i,j,k) in zip(fixed_x_indices, fix_values, bounds)
             if k == "ub"
-                println("Setting ub of variable ",i," to ", j)
                 set_upper_bound(x[i],j)
             elseif k == "lb"
-                println("Setting lb of variable ",i," to ", j)
                 set_lower_bound(x[i],j)
             end
         end
@@ -41,15 +39,13 @@ function fix_variables(x, fixed_x_indices, fix_values, bounds)
     end
     
 end
-function relax_variables(x, integer_vars)
+function relax_variables_jump(x, integer_vars)
     # crucial step: relax any variables not in these vectors is currently fixed 
     # (because we changed to a different branch but model is same for all nodes)
     for i in integer_vars
         set_upper_bound(x[i],infinity)
-        println("Relaxing upper bound of variable ",i)
         
         set_lower_bound(x[i],0.0)
-        println("Relaxing lower bound of variable ",i)
     end
     
 end
@@ -81,7 +77,7 @@ end
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(model::Model, optimizer, integer_vars, fixed_x_indices, fix_x_values, bounds, relaxed_vars)
+function compute_ub_jump(model::Model, optimizer, integer_vars, fixed_x_indices, fix_x_values, bounds, relaxed_vars)
 
     # set the relaxed variables equal to the rounded binary values
     # if these are in the set of binary variables    
@@ -100,7 +96,7 @@ function compute_ub(model::Model, optimizer, integer_vars, fixed_x_indices, fix_
     end
     
     # force the branching variables to fixed value
-    fix_variables(x, fixed_x_indices, fix_x_values,bounds)
+    branch_variables_jump(x, fixed_x_indices, fix_x_values,bounds)
 
     optimize!(model)
 
@@ -125,14 +121,14 @@ function printsolvervars(model, message)
     end
     
 end
-" return the lower bound as well as the values of x computed (for use by compute_ub()).
+" return the lower bound as well as the values of x computed (for use by compute_ub_jump()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(model::Model, fixed_x_indices, fix_x_values, bounds, integer_vars)
+function compute_lb_jump(model::Model, fixed_x_indices, fix_x_values, bounds, integer_vars)
     x = model[:x]
     #printsolvervars(model, "before lb")
-    relax_variables(x,integer_vars)
-    fix_variables(x,fixed_x_indices,fix_x_values, bounds)
+    relax_variables_jump(x,integer_vars)
+    branch_variables_jump(x,fixed_x_indices,fix_x_values, bounds)
     optimize!(model)
    # printsolvervars(model, "after lb")
     if termination_status(model) == MOI.OPTIMAL
@@ -146,19 +142,6 @@ function compute_lb(model::Model, fixed_x_indices, fix_x_values, bounds, integer
     end
 end
 
-"return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
-Binary_vars is the SORTED list of binary variables within the model vars, only select from these"
-function get_next_variable_to_fix(x, integer_vars)
-    @assert issorted(integer_vars)
-    idx = integer_vars[1]
-    for i in integer_vars
-        if abs(x[i] - 0.5) < abs(x[idx]-0.5)
-            idx = i 
-        end
-    end
-    return idx
-end # TODO: delete this since not used
-
 function termination_status_bnb(ub, lb,ϵ)
     if lb == Inf
         return "INFEASIBLE"
@@ -170,17 +153,22 @@ end
 
 function solve_base_model(base_model::Model,integer_vars=collect(1:n))
     # natural variables relaxed to non-negative vars
-    add_constraints(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
+    add_constraints_jump(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
     optimize!(base_model)
     print("Solve_base_model: ",solution_summary(base_model))
 end
+
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
 integer_vars is the SORTED list of binary variables within the model vars, only select from these
 fixed_x_indices is the vector of already fixed variable indices, these should not be considered!"
 function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
     @assert issorted(integer_vars)
-    idx = setdiff(integer_vars, fixed_x_indices)[1]
-    for i in setdiff(integer_vars, fixed_x_indices) # choose only from indices in integer_vars but not in fixed_x_indices!
+    remaining_branching_vars = setdiff(integer_vars, fixed_x_indices)
+    if isempty(remaining_branching_vars)
+        return -1
+    end
+    idx = remaining_branching_vars[1]
+    for i in remaining_branching_vars # choose only from indices in integer_vars but not in fixed_x_indices!
         closest_int = round(x[i])
         closest_int_idx = round(x[idx])
         if abs(x[i] -closest_int - 0.5) < abs(x[idx]- closest_int_idx - 0.5)
@@ -189,13 +177,13 @@ function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
     end
     return idx
 end
-function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars)
+function branch_and_bound_solve_jump(base_model, optimizer, n, ϵ, integer_vars)
 
     if termination_status(base_model) == MOI.OPTIMAL
         lb =objective_value(base_model)
         println("Solution x of unbounded base model: ", value.(base_model[:x]))
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
-        ub, feasible_x=compute_ub(copy(base_model), optimizer, integer_vars, nothing, nothing, nothing,value.(base_model[:x]))
+        ub, feasible_x=compute_ub_jump(copy(base_model), optimizer, integer_vars, nothing, nothing, nothing,value.(base_model[:x]))
         term_status = "UNDEFINED"
     else 
         term_status = "INFEASIBLE"
@@ -209,7 +197,9 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars)
     # 3) start branching
     while term_status == "UNDEFINED"
         println("current node at depth ", node.data.depth, " has x as ", value.(node.data.model[:x]))
-        x = value.(node.data.model[:x])
+        #IMPORTANT: this x does NOT change after solving for l̃, ũ, l̄, ū
+        x = value.(node.data.model[:x]) 
+
         # which edge to split along i.e. which variable to fix next?
         fixed_x_index = get_next_variable_to_fix_to_integer(value.(x), integer_vars, node.data.fixed_x_ind) 
         println("GOT BRANCHING VARIABLE: ", fixed_x_index, " SET SMALLER THAN FLOOR (left): ", floor(x[fixed_x_index]), " OR GREATER THAN CEIL (right)", ceil(x[fixed_x_index]))
@@ -220,10 +210,12 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars)
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_model = node.data.model 
 
-        l̃, relaxed_x_left = compute_lb(left_model, fixed_x_indices, fixed_x_left, bounds_left,integer_vars)
+        l̃, relaxed_x_left = compute_lb_jump(left_model, fixed_x_indices, fixed_x_left, bounds_left,integer_vars)
         println("solved for l̃: ", l̃)
-        ũ, feasible_x_left = compute_ub(copy(left_model), optimizer,integer_vars,fixed_x_indices, fixed_x_left, bounds_left, relaxed_x_left)
+
+        ũ, feasible_x_left = compute_ub_jump(copy(left_model), optimizer,integer_vars,fixed_x_indices, fixed_x_left, bounds_left, relaxed_x_left)
         println("solved for ũ: ", ũ)
+
         println("branched vars on left branch are : ", fixed_x_indices, " to ", fixed_x_left, " with bounds ", bounds_left)
         
         #create new child node (left)
@@ -234,11 +226,12 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars)
         right_model = node.data.model 
         fixed_x_right = vcat(node.data.fixed_x_values, ceil(x[fixed_x_index])) 
         bounds_right = vcat(node.data.bounds, "lb")
-        l̄, relaxed_x_right = compute_lb(right_model, fixed_x_indices, fixed_x_right, bounds_right, integer_vars)
+        l̄, relaxed_x_right = compute_lb_jump(right_model, fixed_x_indices, fixed_x_right, bounds_right, integer_vars)
         
         println("solved for l̄: ", l̄)
-        ū, feasible_x_right = compute_ub(copy(right_model), optimizer, integer_vars, fixed_x_indices, fixed_x_right, bounds_right,relaxed_x_right)
+        ū, feasible_x_right = compute_ub_jump(copy(right_model), optimizer, integer_vars, fixed_x_indices, fixed_x_right, bounds_right,relaxed_x_right)
         println("solved for ū: ", ū)
+
         println("branched vars on right branch are : ", fixed_x_indices, " to ", fixed_x_right, " with bounds ", bounds_right)
         #create new child node (right)
         right_node = rightchild!(node, MyNodeData(right_model, feasible_x_right, fixed_x_indices,fixed_x_right, bounds_right,l̄,ū))
@@ -259,7 +252,7 @@ function branch_and_bound_solve(base_model, optimizer, n, ϵ, integer_vars)
         node = branch_from_node(root) #start from root at every iteration, trace down to the max. depth
         update_best_lb(node)
         # CRUCIAL: solve again to get the correct x vector but feasible x solution stored in data.solution_x
-        compute_lb(node.data.model, node.data.fixed_x_ind, node.data.fixed_x_values,node.data.bounds,integer_vars)
+        compute_lb_jump(node.data.model, node.data.fixed_x_ind, node.data.fixed_x_values,node.data.bounds,integer_vars)
 
         println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
         println(" ")
@@ -281,7 +274,7 @@ c = rand(FloatT,n)
 base_model = build_unbounded_base_model(optimizer,n,k,Q,c)
 integer_vars = sample(1:n, m, replace = false)
 sort!(integer_vars)
-root = branch_and_bound_solve(base_model,optimizer,n,ϵ, integer_vars)
+root = branch_and_bound_solve_jump(base_model,optimizer,n,ϵ, integer_vars)
 println("Found objective: ", root.data.ub, " using ", root.data.solution_x)
 
 include("brute_recursion.jl")
