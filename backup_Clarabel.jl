@@ -1,3 +1,5 @@
+## back up file for direct_Clarabel_one_solver on 01.12.2022
+
 using SparseArrays
 include("mixed_binary_solver.jl")
 function getClarabelData(model::Model)
@@ -69,8 +71,7 @@ end
 function reset_b_vector(b::Vector,integer_vars::Vector)
     m = length(integer_vars)
     b[end-2*m+1:end-m]=zeros(m)
-    b[end-m+1:end] = 
-    infinity*ones(m)
+    b[end-m+1:end] = infinity*ones(m)
 end
 ### OVERWRITE THE FOLLOWING FUNCTIONS FROM BINARY_SOLVER.JL
 " returns the upper bound computed when given the model as well as the rounded variable solution.
@@ -115,13 +116,17 @@ variables of fixed_x_indices that are currently fixed to a boolean"
 function compute_lb(solver, n, fixed_x_indices, fix_x_values,bounds,integer_vars)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
-    cones = solver.cones.cone_specs
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
         reset_b_vector(b,integer_vars) 
     end
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,bounds)
-    
+    println(" A : ",A)
+    println(" b ", b)
+    println("cones : ", solver.cones.cone_specs)
+    println(" Solver.variables.x : ", solver.variables.x)
+    println(" Solver.variables.z : ", solver.variables.z)
+    println(" Solver.variables.s : ", solver.variables.s)
     solution = solve_in_Clarabel(solver)
     
     if solution.status== Clarabel.SOLVED
@@ -143,22 +148,24 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         ub, feasible_x, debug_b =compute_ub(solver, n,integer_vars, nothing, nothing, nothing, base_solution.x)
         term_status = "UNDEFINED"
+        # this is our root node of the binarytree
+        root = BnbNode(ClarabelNodeData(solver,base_solution,feasible_x,[],[],[],lb,ub)) #base_solution is node.data.Model
+        root.data.debug_b = debug_b
+        node = root
+        println("root has ub: ", root.data.ub)
+        iteration = 0
+        x = zeros(length(feasible_x))
     else 
         term_status = "INFEASIBLE"
     end
-    # this is our root node of the binarytree
-    root = BnbNode(ClarabelNodeData(solver,base_solution,feasible_x,[],[],[],lb,ub)) #base_solution is node.data.Model
-    root.data.debug_b = debug_b
-    node = root
-    println("root has ub: ", root.data.ub)
-    iteration = 0
+    
 
     # 3) start branching
     while term_status == "UNDEFINED" 
         println("current node at depth ", node.data.depth, " has x as ", node.data.solution.x)
         #the relaxed solution from compute_lb, != solution_x
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub
-        x = node.data.solver.solution.x 
+        x .= node.data.solver.solution.x 
         # which edge to split along i.e. which variable to fix next?
         fixed_x_index = get_next_variable_to_fix_to_integer(x, integer_vars, node.data.fixed_x_ind) 
         if fixed_x_index == -1
@@ -178,10 +185,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         left_solver = node.data.solver  
         lb_solution,l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, bounds_left,integer_vars) 
         println("solved for l̃: ", l̃)
-        println("x after solving for l̃: ",x)
         ũ, feasible_x_left, debug_b= compute_ub(left_solver, n,integer_vars,fixed_x_indices, fixed_x_left, bounds_left, relaxed_x_left)
         println("solved for ũ: ", ũ)
-        println("x after solving for ũ: ",x)
+        println(" data.solution.x as ", node.data.solution.x) # confirmed: variable x remains unchanged after lb and ub calculation since broadcasted
+        # data.solution.x changes and takes on values of solution to relaxed problem in lb calculation
 
         println("fixed indices on left branch are : ", fixed_x_indices, " to ", fixed_x_left)
         
@@ -243,9 +250,9 @@ end
 
 
 function main_Clarabel()
-    n = 15
-    k = 20
-    m= 13
+    n = 25
+    k = 37
+    m= 15
     integer_vars = sample(1:n, m, replace = false)
     sort!(integer_vars)
     Q = Matrix{Float64}(I, n, n) 
@@ -288,4 +295,5 @@ function main_Clarabel()
     println("Found objective: ", root.data.ub, " using ", round.(root.data.solution_x,digits=3))
     println("Compare with exact: ", round(norm(root.data.solution_x - value.(exact_model[:x]))),round(root.data.ub-objective_value(exact_model)))
     println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
+    return solver
 end

@@ -9,9 +9,9 @@ using Test, ECOS
 function main()
     
     optimizer = Clarabel.Optimizer
-    n = 4
+    n = 5
     k= 7
-    m =4 # how many integer variables (if mixed integer problem)
+    m =5 # how many integer variables (if mixed integer problem)
     integer_vars = sample(1:n, m, replace = false)
     sort!(integer_vars) 
     println("Integer variables : ", integer_vars)

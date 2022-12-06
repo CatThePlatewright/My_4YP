@@ -169,8 +169,11 @@ function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
     end
     idx = remaining_branching_vars[1]
     for i in remaining_branching_vars # choose only from indices in integer_vars but not in fixed_x_indices!
-        closest_int = round(x[i])
-        closest_int_idx = round(x[idx])
+        closest_int = floor(x[i])
+        println("checking x...", i, " ", abs(x[i] -closest_int - 0.5))
+        closest_int_idx = floor(x[idx])
+        println("idx", idx, " ", abs(x[idx]- closest_int_idx - 0.5))
+
         if abs(x[i] -closest_int - 0.5) < abs(x[idx]- closest_int_idx - 0.5)
             idx = i 
         end
@@ -198,6 +201,7 @@ function branch_and_bound_solve_jump(base_model, optimizer, n, ϵ, integer_vars)
     while term_status == "UNDEFINED"
         println("current node at depth ", node.data.depth, " has x as ", value.(node.data.model[:x]))
         #IMPORTANT: this x does NOT change after solving for l̃, ũ, l̄, ū
+        # as value.() is performing broadcasting
         x = value.(node.data.model[:x]) 
 
         # which edge to split along i.e. which variable to fix next?
