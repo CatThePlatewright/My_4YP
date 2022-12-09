@@ -85,12 +85,12 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
     solver #the Clarabel solver object in Clarabel 
     solution # the result/solution object != solution_x
     depth::Int
-    solution_x::Vector{Float64} # storing the BEST solution (best ub)
+    solution_x::Vector{Float64} # storing the BEST solution (best ub feasible solution)
     fixed_x_ind::Vector{Int} 
-    fixed_x_values::Vector{Float64} # to which value is it fixed 
+    fixed_x_values::Vector{Float64} # to which value is it bounded 
     bounds::Vector{String} # storing whether variable[fixed_x_ind] is bounded by "ub" or "lb" to fixed_x_value
-    lb::Float64
-    ub::Float64
+    lb::Float64 # on objective_value
+    ub::Float64 #on objective_value
     debug_b::Vector{Float64} # stores only the b-vector in compute_ub (so includes rounded relaxed_vars)
     function ClarabelNodeData(solver, solution, solution_x, fixed_x_ind,fixed_x_values,bounds,lb,ub) 
        return new(solver, solution, length(fixed_x_ind), solution_x, fixed_x_ind,fixed_x_values, bounds, lb,ub, zeros(1))

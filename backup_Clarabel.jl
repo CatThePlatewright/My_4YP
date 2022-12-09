@@ -249,10 +249,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
 end
 
 
-function main_Clarabel()
-    n = 25
-    k = 37
-    m= 15
+function main_Clarabel_backup()
+    n = 15
+    k = 25
+    m= 10
     integer_vars = sample(1:n, m, replace = false)
     sort!(integer_vars)
     Q = Matrix{Float64}(I, n, n) 

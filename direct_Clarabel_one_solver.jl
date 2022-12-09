@@ -15,7 +15,7 @@ end
 function getAugmentedData(A::SparseMatrixCSC,b::Vector,cones::Vector,integer_vars::Vector,n::Int)
     m = length(integer_vars)
     # adding m rows of 0*x[i] <= 1
-    Ã = sparse(collect(1:m),[i for i in integer_vars] ,zeros(m),m,n) #corresponding to lower bound constraints -x+s= -b
+    Ã = sparse(collect(1:m),[i for i in integer_vars] ,-1*ones(m),m,n) #corresponding to lower bound constraints -x+s= -b
     Ā = sparse_vcat(A,Ã)
     b̄ = vcat(b,zeros(m)) 
     s̄ = vcat(cones,Clarabel.NonnegativeConeT(m))
