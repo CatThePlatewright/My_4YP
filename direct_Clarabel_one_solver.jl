@@ -71,42 +71,44 @@ function add_branching_constraint(A::SparseMatrixCSC,b::Vector, integer_vars, fi
 end
 function reset_Ab(A, b::Vector,integer_vars::Vector)
     m = length(integer_vars)
-    A[collect(end-m+1:end),[i for i in integer_vars]]=sparse(zeros(m,m))
+    A[collect(end-m+1:end),[i for i in integer_vars]]==sparse(Matrix(-1*I,2,2))
     b[end-m+1:end] = zeros(m)
 end
 
 function evaluate_constraint(solver,x)  
-    # inspired from residuals.jl
-    rz_inf = deepcopy(solver.variables.s) # TOASK
-    mul!(rz_inf, solver.data.A, x, 1.0, 1.0)
-    rz = rz_inf - solver.data.b * solver.variables.τ
-    println("Residual z : ", rz)
-    #=row = 1
-    
-    for i in eachindex(cone_specs)
-        t = typeof(cone_specs[i])
-        if t == Clarabel.ZeroConeT
-            for j in 1:cone_specs[i].dim
-                row += 1
-                val = A[row,:]*x-b[row]
-                println("Evaluating if ", val, " is equal to 0...")
-                if ~isapprox(val,0,atol = 1e-3)
+    # TODO: check miOSQP code (this is the heuristics part)
+    cone_specs = solver.cones.cone_specs
+    residual = zeros(length(solver.data.b))
+    residual .= solver.data.b
+    mul!(residual, solver.data.A, x, -1, 1)
+    j = 1
+    while j <= length(solver.data.b)
+        for i in eachindex(cone_specs)
+            t = typeof(cone_specs[i])
+            k = j:j+cone_specs[i].dim-1
+            
+            if t == Clarabel.ZeroConeT
+                println("Evaluating ", residual[k], " == 0 ?")
+                if ~all(isapprox.(residual[k],0,atol = 1e-3))
                     return false
                 end
-            end
-        elseif t == Clarabel.NonnegativeConeT
-            for j in 1:cone_specs[i].dim
-                row += 1
-                val = A[:,row]'*x-b[row]
-                println("Evaluating if ", val, " is smaller than 0...")
-                if val > 0
-                    return false
-                end
-            end
-        end
+                
+            
+            elseif t == Clarabel.NonnegativeConeT
+                println("Evaluating ", residual[k], ">= 0 ?")
 
-    end =#
-    return isapprox(rz,zeros(length(rz)),atol=1e-3)
+                if minimum(residual[k])< 0
+                    return false
+                    
+                end
+
+            end
+            j = j+ cone_specs[i].dim
+            
+
+        end 
+    end
+    return true
 end
 " returns the upper bound computed when given the model as well as the rounded variable solution.
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.

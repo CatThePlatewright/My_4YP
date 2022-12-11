@@ -101,11 +101,6 @@ end
 
 
 function evaluate_constraint(solver,x)  
-    #= 
-    rz_inf = deepcopy(solver.variables.s) 
-    mul!(rz_inf, solver.data.A, x, 1.0, 1.0)
-    rz = rz_inf - solver.data.b * solver.variables.τ =#
-
     # TODO: check miOSQP code (this is the heuristics part)
     cone_specs = solver.cones.cone_specs
     residual = zeros(length(solver.data.b))
