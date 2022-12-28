@@ -12,11 +12,11 @@ function generate_random_sample(m, n, inum, sparsity, rank)
 
     q = randn(n);
     A = -sprandn(m, n, sparsity);
-    u = 2*ones(m) + rand(m);
+    u = 2*ones(m) + rand(m); # bounds for vars x themselves (domain D in paper)
     l = -2*ones(m) + rand(m);
     # u = 0.5*n*(ones(m) + rand(m));
     # l = 0.5*n*(-ones(m) + rand(m));
-    lb = -2*ones(n) + rand(n);
+    lb = -2*ones(n) + rand(n); # bounds for A*x (C in paper or B)
     ub = 2*ones(n) + rand(n);
     b = zeros(m);
     #ensure integer feasibility
@@ -53,10 +53,10 @@ function generate_MPC(index)
     A = -fixed_data["A"]
     b = zeros(size(A,1))
     println(cond(P))
-    l = b + fixed_data["l"]
+    l = b + fixed_data["l"] #extended array of lower bounds
     u = b + adaptive_data["q_u_array"][index,:]
-    lb = fixed_data["i_l"]
-    ub = fixed_data["i_u"]
+    lb = fixed_data["i_l"] #lower bound on integer variables
+    ub = fixed_data["i_u"] # upper bound on integer variables
     index_set = fixed_data["i_idx"] .+ 1
     return sparse(P), q, sparse(A), b, l, u, lb, ub, index_set
 end

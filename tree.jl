@@ -83,6 +83,7 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
 
  mutable struct ClarabelNodeData #mutable since lb and ub can be updated after first creation of node
     solver #the Clarabel solver object in Clarabel 
+    is_pruned::Bool
     solution # the result/solution object != solution_x
     depth::Int
     solution_x::Vector{Float64} # storing the BEST solution (best ub feasible solution)
@@ -92,8 +93,8 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
     lb::Float64 # on objective_value
     ub::Float64 #on objective_value
     debug_b::Vector{Float64} # stores only the b-vector in compute_ub (so includes rounded relaxed_vars)
-    function ClarabelNodeData(solver, solution, solution_x, fixed_x_ind,fixed_x_values,bounds,lb,ub) 
-       return new(solver, solution, length(fixed_x_ind), solution_x, fixed_x_ind,fixed_x_values, bounds, lb,ub, zeros(1))
+    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,bounds,lb) 
+       return new(solver, false, solution, length(fixed_x_ind), Inf*ones(length(solution)),fixed_x_ind,fixed_x_values, bounds, lb,Inf, zeros(1))
     end
 end
 
@@ -116,20 +117,25 @@ end
 function branch_from_node(node::BnbNode)
     if isnothing(node.left) || isnothing(node.right) 
         return node
-    elseif (node.left.data.lb <= node.right.data.lb) 
-        println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
-        node = node.left
-        println("BRANCHING LEFT AT DEPTH ", node.data.depth)
-    elseif  (node.left.data.lb > node.right.data.lb) 
-        println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
-        node = node.right
-        println("BRANCHING RIGHT AT DEPTH ", node.data.depth)
+    elseif node.left.data.is_pruned && node.right.data.is_pruned
+        println("Both children pruned, so prune this node")
+        node.data.is_pruned = true
+        branch_from_node(node.parent)
+    elseif node.left.data.is_pruned && ~node.right.data.is_pruned
+        branch_from_node(node.right)
+    elseif node.right.data.is_pruned && ~node.left.data.is_pruned
+        branch_from_node(node.left)
     else
-        error("Error with Tree?")
-        print_tree(node)
-        return 
-    end
-    branch_from_node(node)
+        if (node.left.data.lb <= node.right.data.lb) 
+            println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
+            node = node.left
+            println("BRANCHING LEFT AT DEPTH ", node.data.depth)
+        elseif  (node.left.data.lb > node.right.data.lb) 
+            println("left child lb: ", node.left.data.lb, " right child lb: ",node.right.data.lb)
+            node = node.right
+            println("BRANCHING RIGHT AT DEPTH ", node.data.depth)
+        end
+        branch_from_node(node)
 end 
 
 
