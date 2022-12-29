@@ -216,7 +216,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         left_node = leftchild!(node, ClarabelNodeData(left_solver, lb_solution, fixed_x_indices, fixed_x_left,bounds_left,l̃)) 
         
         #TODO: early_termination here, as we want to use variables.z after solving the relaxed problem (?)
-        early_termination(best_ub,left_node,left_node.data.solver.data)
+        early_termination(best_ub,left_node)
         # TODO prune node if l̄ > current ub or if l̄ = Inf
         if l̃ > root.data.ub || l̃ == Inf
             left_node.data.is_pruned = true
@@ -244,7 +244,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, lb_solution_right, fixed_x_indices,fixed_x_right,bounds_right,l̄))
-        early_termination(best_ub,right_node,right_node.data.solver.data)
+        early_termination(best_ub,right_node)
 
         if l̄ > root.data.ub || l̄ == Inf
             right_node.data.is_pruned = true
@@ -293,10 +293,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     return root, term_status
 end
 
-function getData()
-    n = 15
-    k = 25
-    m= 10
+function getData(n,m,k)
     integer_vars = sample(1:n, m, replace = false)
     sort!(integer_vars)
     Q = Matrix{Float64}(I, n, n) 
@@ -323,11 +320,11 @@ function getData()
 
     
     P,q,A,b, cones= getClarabelData(old_model)
-    return P,q,A,b,cones
+    return P,q,A,b,cones, integer_vars
     
 end
 function main_Clarabel()
-    P,q,A,b, cones= getData()
+    P,q,A,b, cones, integer_vars= getData(2,2,3)
 
     Ā,b̄, s̄= getAugmentedData(A,b,cones,integer_vars,n)
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
