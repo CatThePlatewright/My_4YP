@@ -1,5 +1,7 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
+include("early_termination_IPM.jl")
+
 function getClarabelData(model::Model)
     # access the Clarabel solver object
     solver = JuMP.unsafe_backend(model).solver
@@ -163,6 +165,14 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
     end
 end
 
+function check_lb_pruning(node, best_ub)
+    println("DEBUG node.data.lb - best_ub: ", node.data.lb - best_ub)
+    if node.data.lb - best_ub >1e-3 || node.data.lb == Inf
+        println("Prune node with lower bound larger than best ub or ==INF")
+        node.data.is_pruned = true
+    end
+end
+
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n))
     
@@ -173,7 +183,9 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         ub, feasible_x =compute_ub(solver, n,integer_vars, base_solution.x)
         term_status = "UNDEFINED" #TOASK should this rather be Clarabel.SolverStatus?
         # this is our root node of the binarytree
-        root = BnbNode(ClarabelNodeData(solver,base_solution,feasible_x,[],[],[],lb,ub)) #base_solution is node.data.Model
+        root = BnbNode(ClarabelNodeData(solver,base_solution,[],[],[],lb)) #base_solution is node.data.Model
+        root.data.solution_x = feasible_x
+        root.data.ub = ub
         root.data.debug_b = deepcopy(solver.data.b)
         node = root
         println("root has ub: ", root.data.ub)
@@ -208,6 +220,9 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         
         println("fixed_x_left: ", fixed_x_left)
         bounds_left = vcat(node.data.bounds, "ub")
+
+        ū = Inf
+        ũ = Inf
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         lb_solution,l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, bounds_left,integer_vars) 
@@ -216,11 +231,9 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         left_node = leftchild!(node, ClarabelNodeData(left_solver, lb_solution, fixed_x_indices, fixed_x_left,bounds_left,l̃)) 
         
         #TODO: early_termination here, as we want to use variables.z after solving the relaxed problem (?)
-        early_termination(best_ub,left_node)
+        early_termination(best_ub,left_node,length(integer_vars))
         # TODO prune node if l̄ > current ub or if l̄ = Inf
-        if l̃ > root.data.ub || l̃ == Inf
-            left_node.data.is_pruned = true
-        end
+        check_lb_pruning(left_node,best_ub)
 
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
@@ -244,11 +257,8 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, lb_solution_right, fixed_x_indices,fixed_x_right,bounds_right,l̄))
-        early_termination(best_ub,right_node)
-
-        if l̄ > root.data.ub || l̄ == Inf
-            right_node.data.is_pruned = true
-        end
+        early_termination(best_ub,right_node,length(integer_vars))
+        check_lb_pruning(right_node, best_ub)
 
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
@@ -299,7 +309,6 @@ function getData(n,m,k)
     Q = Matrix{Float64}(I, n, n) 
     Random.seed!(1234)
     c = rand(Float64,n)
-    ϵ = 0.00000001
         # check against Gurobi
     exact_model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(exact_model, "OutputFlag", 0)
@@ -320,12 +329,17 @@ function getData(n,m,k)
 
     
     P,q,A,b, cones= getClarabelData(old_model)
-    return P,q,A,b,cones, integer_vars
+    return P,q,A,b,cones, integer_vars, exact_model
     
 end
 function main_Clarabel()
-    P,q,A,b, cones, integer_vars= getData(2,2,3)
+    n = 3
+    m = 3
+    k = 7
+    ϵ = 0.00000001
 
+    P,q,A,b, cones, integer_vars, exact_model= getData(n,m,k)
+    
     Ā,b̄, s̄= getAugmentedData(A,b,cones,integer_vars,n)
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
@@ -346,3 +360,5 @@ function main_Clarabel()
     
     return solver
 end
+
+main_Clarabel()

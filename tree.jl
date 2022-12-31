@@ -94,7 +94,7 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
     ub::Float64 #on objective_value
     debug_b::Vector{Float64} # stores only the b-vector in compute_ub (so includes rounded relaxed_vars)
     function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,bounds,lb) 
-       return new(solver, false, solution, length(fixed_x_ind), Inf*ones(length(solution)),fixed_x_ind,fixed_x_values, bounds, lb,Inf, zeros(1))
+       return new(solver, false, solution, length(fixed_x_ind), Inf*ones(1),fixed_x_ind,fixed_x_values, bounds, lb,Inf, zeros(1))
     end
 end
 
@@ -136,6 +136,8 @@ function branch_from_node(node::BnbNode)
             println("BRANCHING RIGHT AT DEPTH ", node.data.depth)
         end
         branch_from_node(node)
+
+    end
 end 
 
 

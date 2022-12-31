@@ -170,9 +170,7 @@ function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
     idx = remaining_branching_vars[1]
     for i in remaining_branching_vars # choose only from indices in integer_vars but not in fixed_x_indices!
         closest_int = floor(x[i])
-        println("checking x...", i, " ", abs(x[i] -closest_int - 0.5))
         closest_int_idx = floor(x[idx])
-        println("idx", idx, " ", abs(x[idx]- closest_int_idx - 0.5))
 
         if abs(x[i] -closest_int - 0.5) < abs(x[idx]- closest_int_idx - 0.5)
             idx = i 
