@@ -81,20 +81,19 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
      end
  end
 
+
+""" Data fields for a BnBNode within the Clarabel implementation"""
  mutable struct ClarabelNodeData #mutable since lb and ub can be updated after first creation of node
     solver #the Clarabel solver object in Clarabel 
-    is_pruned::Bool
-    solution # the result/solution object != solution_x
+    is_pruned::Bool #TODO maybe unnecessary
+    solution # Clarabel.solution object
     depth::Int
-    solution_x::Vector{Float64} # storing the BEST solution (best ub feasible solution)
     fixed_x_ind::Vector{Int} 
     fixed_x_values::Vector{Float64} # to which value is it bounded 
-    bounds::Vector{String} # storing whether variable[fixed_x_ind] is bounded by "ub" or "lb" to fixed_x_value
+    bounds::Vector{String} # TODO: this is not elegant, maybe directly modify A instead? (storing whether variable[fixed_x_ind] is bounded by "ub" or "lb" to fixed_x_value)
     lb::Float64 # on objective_value
-    ub::Float64 #on objective_value
-    debug_b::Vector{Float64} # stores only the b-vector in compute_ub (so includes rounded relaxed_vars)
     function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,bounds,lb) 
-       return new(solver, false, solution, length(fixed_x_ind), Inf*ones(1),fixed_x_ind,fixed_x_values, bounds, lb,Inf, zeros(1))
+       return new(solver, false, solution, length(fixed_x_ind),fixed_x_ind,fixed_x_values, bounds, lb)
     end
 end
 
@@ -102,15 +101,6 @@ end
     while ~isroot(node)
         AbstractTrees.parent(node).data.lb = node.data.lb
         node = AbstractTrees.parent(node)
-    end
-end
-
-function update_best_ub(node::BnbNode)
-    root = getroot(node)
-    if ~isroot(node) && (node.data.ub < root.data.ub)
-        root.data.ub = node.data.ub 
-        println("FOUND BETTER UB AT DEPTH ", node.data.depth)
-        root.data.solution_x = node.data.solution_x
     end
 end
 

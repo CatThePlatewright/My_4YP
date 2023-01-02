@@ -1,6 +1,5 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
-include("early_termination_IPM.jl")
 
 function getClarabelData(model::Model)
     # access the Clarabel solver object
@@ -166,48 +165,59 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
 end
 
 function check_lb_pruning(node, best_ub)
-    println("DEBUG node.data.lb - best_ub: ", node.data.lb - best_ub)
+    println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
     if node.data.lb - best_ub >1e-3 || node.data.lb == Inf
         println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
     end
 end
 
+function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth)
+    if (u < best_ub) # this only happens if node is not pruned
+        best_ub = u
+        println("FOUND BETTER UB AT DEPTH ", depth)
+        best_feasible_solution = feasible_solution
+    end
+    return best_ub, best_feasible_solution
+end
+
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n))
-    
+    #initialise global best upper bound on objective value and corresponding feasible solution (integer)
+    best_ub = Inf 
+    best_feasible_solution = zeros(n)
+    node_queue = Vector{BnbNode}
+    max_nb_nodes = 100
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
         println("Solution x of unbounded base model: ", base_solution.x)
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
-        ub, feasible_x =compute_ub(solver, n,integer_vars, base_solution.x)
+        best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         term_status = "UNDEFINED" #TOASK should this rather be Clarabel.SolverStatus?
         # this is our root node of the binarytree
         root = BnbNode(ClarabelNodeData(solver,base_solution,[],[],[],lb)) #base_solution is node.data.Model
-        root.data.solution_x = feasible_x
-        root.data.ub = ub
-        root.data.debug_b = deepcopy(solver.data.b)
         node = root
-        println("root has ub: ", root.data.ub)
         iteration = 0
-        x = zeros(length(feasible_x))
-
+        x = zeros(n)
     else 
         term_status = "INFEASIBLE"
     end
     
 
     # 3) start branching
-    while term_status == "UNDEFINED" 
-        best_ub = root.data.ub
+    while term_status == "UNDEFINED" #while ~isempty(node_queue) || length(node_queue) <= 100 else println("MAXIMUM NUMBER OF NODES REACHED")
+        println(" ")
+        println("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution)
+        # pick and remove node from node_queue
+        #node = dequeue!(node_queue)
         println("current node at depth ", node.data.depth, " has data.solution.x as ", node.data.solution.x)
-        #the relaxed solution from compute_lb, != solution_x
 
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub -> use broadcasting
         x .= node.data.solver.solution.x 
         # which edge to split along i.e. which variable to fix next?
         fixed_x_index = get_next_variable_to_fix_to_integer(x, integer_vars, node.data.fixed_x_ind) 
-        if fixed_x_index == -1
+
+        if fixed_x_index == -1 #TODO remove this
             term_status = "OPTIMAL"
             break
         end
@@ -219,6 +229,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_left = vcat(node.data.fixed_x_values, floor_value) 
         
         println("fixed_x_left: ", fixed_x_left)
+        #TODO: get rid of this string
         bounds_left = vcat(node.data.bounds, "ub")
 
         ū = Inf
@@ -229,24 +240,21 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, lb_solution, fixed_x_indices, fixed_x_left,bounds_left,l̃)) 
-        
-        #TODO: early_termination here, as we want to use variables.z after solving the relaxed problem (?)
-        early_termination(best_ub,left_node,length(integer_vars))
-        # TODO prune node if l̄ > current ub or if l̄ = Inf
+
+        # prune node if l̄ > current ub or if l̄ = Inf
         check_lb_pruning(left_node,best_ub)
 
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
             ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
             println("Left node, solved for ũ: ", ũ)
-            left_node.data.solution_x = feasible_x_left
-            left_node.data.ub = ũ # TODO maybe use setter functions
+            best_ub, best_feasible_solution = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth)
+        #TODO: append to node_queue
+
         end
         println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
         println(" ")
         
-        
-
         # solve the right child problem to get l-bar and u-bar
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, ceil_value) 
@@ -257,50 +265,41 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, lb_solution_right, fixed_x_indices,fixed_x_right,bounds_right,l̄))
-        early_termination(best_ub,right_node,length(integer_vars))
         check_lb_pruning(right_node, best_ub)
 
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
-            ū, feasible_x_right = compute_ub(right_solver, n, integer_vars, relaxed_x_right)
-            println("solved for ū: ", ū)
-            right_node.data.solution_x = feasible_x_right
-            right_node.data.ub = ū # TODO maybe use setter functions            
+            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
+            println("Right node, solved for ū: ", ū)
+            best_ub, best_feasible_solution = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth)
+            #push!(node_queue,right_node)
         end
         println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
-        # left_node.data.debug_b = debug_b
-
 
         # new lower and upper bounds on p*: pick the minimum
         λ =  minimum([l̄, l̃]) 
-        μ =  minimum([ū, ũ])
 
         node_with_best_lb = λ==l̄ ? right_node : left_node
-        node_with_best_ub = μ==ū ? right_node : left_node
         #back-propagate the new lb and ub to root
-        update_best_ub(node_with_best_ub) #TOASK: why propagate ub up to root? that would be unnecessary slower
         update_best_lb(node_with_best_lb)
-
-        println("root bounds: ", root.data.lb,"    ", root.data.ub)
 
         # decide which child node to branch on next: pick the one with the lowest lb
         # pruning: do not branch on nodes where is_pruned
-        node = branch_from_node(root) #start from root at every iteration, trace down to the max. depth
+        node = branch_from_node(root) #TOASK Paul vs Yuwen: start from root at every iteration, trace down to the max. depth
         update_best_lb(node)
 
         # CRUCIAL: solve again to get the correct relaxed solution (see line 2 after "while") 
         # but note that feasible x solution stored in data.solution_x
         compute_lb(node.data.solver,n, node.data.fixed_x_ind, node.data.fixed_x_values, node.data.bounds,integer_vars) 
 
-        println("Difference: ", root.data.ub, " - ",root.data.lb, " is ",root.data.ub-root.data.lb )
+        println("Difference: ", best_ub, " - ",root.data.lb, " is ",best_ub - root.data.lb )
         println(" ")
-        term_status = termination_status_bnb(root.data.ub,root.data.lb, ϵ)
+        term_status = termination_status_bnb(best_ub,root.data.lb, ϵ)
         iteration += 1
         println("iteration : ", iteration)
     end
-    #return iteration,Aleft,bleft,conesleft,Aleft2,bleft2,conesleft2
     
-    return root, term_status
+    return best_ub, best_feasible_solution, term_status
 end
 
 function getData(n,m,k)
@@ -333,9 +332,9 @@ function getData(n,m,k)
     
 end
 function main_Clarabel()
-    n = 3
-    m = 3
-    k = 7
+    n = 6
+    m = 6
+    k = 4
     ϵ = 0.00000001
 
     P,q,A,b, cones, integer_vars, exact_model= getData(n,m,k)
@@ -351,10 +350,10 @@ function main_Clarabel()
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
-    root, term_status = branch_and_bound_solve(solver, result,n,ϵ, integer_vars)
+    best_ub, feasible_solution, term_status = branch_and_bound_solve(solver, result,n,ϵ, integer_vars)
     println("Termination status of Clarabel bnb:" , term_status)
-    println("Found objective: ", root.data.ub, " using ", round.(root.data.solution_x,digits=3))
-    println("Compare with exact: ", round(norm(root.data.solution_x - value.(exact_model[:x]))),round(root.data.ub-objective_value(exact_model)))
+    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+    println("Compare with exact: ", round(norm(feasible_solution - value.(exact_model[:x]))),round(best_ub-objective_value(exact_model)))
     println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
 
     
