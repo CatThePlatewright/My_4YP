@@ -206,9 +206,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
 
     # 3) start branching
     while term_status == "UNDEFINED" #while ~isempty(node_queue) || length(node_queue) <= 100 else println("MAXIMUM NUMBER OF NODES REACHED")
-        # CRUCIAL: solve again to get the correct relaxed solution (see line 2 after "while") 
-        # but note that feasible x solution stored in data.solution_x
-        compute_lb(node.data.solver,n, node.data.fixed_x_ind, node.data.fixed_x_values,integer_vars) 
         println(" ")
         println("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution)
         # pick and remove node from node_queue
@@ -216,7 +213,11 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("current node at depth ", node.data.depth, " has data.solution.x as ", node.data.solution.x)
 
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub -> use broadcasting
-        x .= node.data.solver.solution.x 
+        x .= node.data.solution.x 
+        println("Compare x with solver.solution.x: ", x, " vs ", node.data.solver.solution.x)
+        if x != node.data.solver.solution.x
+            error("x is not equal to solver.solution.x")
+        end
         # which edge to split along i.e. which variable to fix next?
         fixed_x_index = get_next_variable_to_fix_to_integer(x, integer_vars, node.data.fixed_x_ind) 
 
@@ -287,8 +288,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         node = branch_from_node(root) #TOASK Paul vs Yuwen: start from root at every iteration, trace down to the max. depth
         update_best_lb(node)
 
-        
-
         println("Difference: ", best_ub, " - ",root.data.lb, " is ",best_ub - root.data.lb )
         println(" ")
         term_status = termination_status_bnb(best_ub,root.data.lb, ϵ)
@@ -319,19 +318,15 @@ function getData(n,m,k)
 
     optimizer = Clarabel.Optimizer
     old_model = build_unbounded_base_model(optimizer,n,k,Q,c)
-    solve_base_model(old_model,integer_vars)
-
-    #solve in Clarabel the relaxed problem
-
-    
+    solve_base_model(old_model,integer_vars)    #solve in Clarabel the relaxed problem
     P,q,A,b, cones= getClarabelData(old_model)
     return P,q,A,b,cones, integer_vars, exact_model
     
 end
 function main_Clarabel()
-    n = 6
-    m = 6
-    k = 8
+    n = 8
+    m = 8
+    k = 4
     ϵ = 0.00000001
 
     P,q,A,b, cones, integer_vars, exact_model= getData(n,m,k)
