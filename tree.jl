@@ -90,10 +90,9 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
     depth::Int
     fixed_x_ind::Vector{Int} 
     fixed_x_values::Vector{Float64} # to which value is it bounded 
-    bounds::Vector{String} # TODO: this is not elegant, maybe directly modify A instead? (storing whether variable[fixed_x_ind] is bounded by "ub" or "lb" to fixed_x_value)
     lb::Float64 # on objective_value
-    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,bounds,lb) 
-       return new(solver, false, solution, length(fixed_x_ind),fixed_x_ind,fixed_x_values, bounds, lb)
+    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,lb) 
+       return new(solver, false, solution, length(fixed_x_ind),fixed_x_ind,fixed_x_values, lb)
     end
 end
 
