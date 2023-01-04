@@ -33,7 +33,7 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
     # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
     indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
     for (i,j) in zip(indices_in_b, fix_values)
-        if j > 0
+        if j >= 0
             println("set upper bound for index: ", i," to ", j)
             # this is for x[i] <= value which are in the last m:end elements of augmented b
             b[end-m+i] = j
