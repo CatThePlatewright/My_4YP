@@ -161,21 +161,17 @@ end
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
 integer_vars is the SORTED list of binary variables within the model vars, only select from these
 fixed_x_indices is the vector of already fixed variable indices, these should not be considered!"
-function get_next_variable_to_fix_to_integer(x, integer_vars, fixed_x_indices)
+function pick_index(x, integer_vars, fixed_x_indices)
     @assert issorted(integer_vars)
     remaining_branching_vars = setdiff(integer_vars, fixed_x_indices)
     if isempty(remaining_branching_vars)
-        return -1
+        error("empty set remaining_branching_vars! should not happen, check ub-lb < ϵ")
     end
-    idx = remaining_branching_vars[1]
-    for i in remaining_branching_vars # choose only from indices in integer_vars but not in fixed_x_indices!
-        closest_int = floor(x[i])
-        closest_int_idx = floor(x[idx])
-
-        if abs(x[i] -closest_int - 0.5) < abs(x[idx]- closest_int_idx - 0.5)
-            idx = i 
-        end
-    end
+    println("remaining_branching_vars : ", remaining_branching_vars)
+    frac_part = broadcast(v -> abs(v - round(v)), x[remaining_branching_vars])
+    println("pickindex frac_part: ", frac_part)
+    index_of_max = argmax(frac_part)
+    idx = remaining_branching_vars[index_of_max]
     return idx
 end
 function branch_and_bound_solve_jump(base_model, optimizer, n, ϵ, integer_vars)
@@ -203,7 +199,7 @@ function branch_and_bound_solve_jump(base_model, optimizer, n, ϵ, integer_vars)
         x = value.(node.data.model[:x]) 
 
         # which edge to split along i.e. which variable to fix next?
-        fixed_x_index = get_next_variable_to_fix_to_integer(value.(x), integer_vars, node.data.fixed_x_ind) 
+        fixed_x_index = pick_index(value.(x), integer_vars, node.data.fixed_x_ind) 
         println("GOT BRANCHING VARIABLE: ", fixed_x_index, " SET SMALLER THAN FLOOR (left): ", floor(x[fixed_x_index]), " OR GREATER THAN CEIL (right)", ceil(x[fixed_x_index]))
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always sets lower bound of the branching variable to closest lower integer
