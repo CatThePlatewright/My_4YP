@@ -415,7 +415,7 @@ function adaptive_step(op::MIADMMOperator)
     # println("Iteration: ", operator.iter, "  Primal residual is ", operator.r_prim, "  Dual residual is ", operator.r_dual)
 end
 
-function compute_residuals(op::ADMMOperator, x, s, y)
+#= function compute_residuals(op::ADMMOperator, x, s, y)
 	A= op.A
 	b= op.b
 	P= op.P
@@ -424,7 +424,7 @@ function compute_residuals(op::ADMMOperator, x, s, y)
 	r_dual = norm(P * x + q - A' * y, Inf)
 
 	return r_prim, r_dual
-end
+end =#
 
 #scaled
 function compute_residuals(op::MIADMMOperator)

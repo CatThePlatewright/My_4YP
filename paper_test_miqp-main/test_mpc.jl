@@ -13,9 +13,6 @@ includet("src\\branch_and_bound.jl")
 # includet("src\\cuts.jl")
 includet("src\\generate_sample.jl")
 
-# function miqp()
-#generate data
-# P, q, A, b, l, u, lb, ub, i_idx = generate_MPC(1)
 start_horizon = 2400
 end_horizon = 2400
 # 104, 108, 109, 1182
@@ -152,7 +149,7 @@ for i = start_horizon:end_horizon
 end
 # end
 
-
-save("data\\mimpc_comp.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num)
+#NOTE: this was not commented out (Cat)
+#save("data\\mimpc_comp.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num)
 
 # save("data\\problem.jld", "P", Matrix(P), "q", q, "A", Matrix(A), "b", b, "l", l, "u", u, "lb", lb, "ub", ub, "i_idx", i_idx)

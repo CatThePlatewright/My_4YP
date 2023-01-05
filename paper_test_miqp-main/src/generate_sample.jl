@@ -42,7 +42,7 @@ end
 """
 min 0.5 x'Px + q'x
 s.t.  l ≤ Ax ≤u,
-	  x ∈ Z, relaxed to [lx, ux]
+	  x ∈ Z, relaxed to [lx, ux] (initially to [-1,1])
 """
 
 function generate_MPC(index)
@@ -50,13 +50,15 @@ function generate_MPC(index)
     fixed_data = npzread("mpc_data\\N=8\\matrice_data.npy")
     P = fixed_data["P"]
     q = adaptive_data["q_array"][index,:]
-    A = -fixed_data["A"]
+    A = -fixed_data["A"] # TOASK: is this for ADMM? do we still need negative sign with Clarabel uses Ax+s=b?
     b = zeros(size(A,1))
     println(cond(P))
+
     l = b + fixed_data["l"] #extended array of lower bounds
     u = b + adaptive_data["q_u_array"][index,:]
+    #TODO: change lb and ub to 0 and 2 so that we have naturals 0,1,2 instead integers -1,0,1
     lb = fixed_data["i_l"] #lower bound on integer variables
-    ub = fixed_data["i_u"] # upper bound on integer variables
-    index_set = fixed_data["i_idx"] .+ 1
+    ub = fixed_data["i_u"] # upper bound on integer variables 
+    index_set = fixed_data["i_idx"] .+ 1 # offset by 1 since extracted from python array starting from 0 not 1 as in julia
     return sparse(P), q, sparse(A), b, l, u, lb, ub, index_set
 end
