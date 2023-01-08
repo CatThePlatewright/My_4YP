@@ -153,9 +153,10 @@ end
 
 function solve_base_model(base_model::Model,integer_vars=collect(1:n))
     # natural variables relaxed to non-negative vars
-    add_constraints_jump(base_model, zeros(length(integer_vars)), nothing, integer_vars) 
+    add_constraints_jump(base_model, -1*ones(length(integer_vars)), nothing, integer_vars) 
     optimize!(base_model)
-    print("Solve_base_model: ",solution_summary(base_model))
+    print("Solve_base_model in JuMP: ",solution_summary(base_model))
+    println("JuMP solution relaxed: ",  objective_value(base_model) , " using ", value.(base_model[:x]))
 end
 
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)

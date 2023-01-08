@@ -1,6 +1,7 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
 
+
 function getClarabelData(model::Model)
     # access the Clarabel solver object
     solver = JuMP.unsafe_backend(model).solver
@@ -23,6 +24,20 @@ function getAugmentedData(A::SparseMatrixCSC,b::Vector,cones::Vector,integer_var
     cones = vcat(cones,Clarabel.NonnegativeConeT(2*m)) # this is so that we can modify it to ZeroconeT afterwards
     
     return A,b, cones
+end
+"""very simple domain propagation to tighten mainly upper bounds on x variables.
+A and b are the augmented data.A and data.b : 
+[-1 -1 ... -1;          [-k
+-1  0   ... 0;           0
+ 0  -1   ... 0;          0
+ 0  0   ... -1;          0
+ 1  0   ... 0;            1000
+ 0  1   ... 0;  * x <=    1000
+ 0  0   ... 1]            1000]  --> double the last 2N rows for augmented data
+ we tighten 1000 to k for all variables"""
+function simple_domain_propagation_4N_augmented!(b,k)
+    replace!(b,1000=>k)
+    
 end
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values)    
     if isnothing(fixed_x_indices) 
@@ -55,13 +70,14 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n, fixed_x_indices, fix_x_values,integer_vars, best_ub)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, best_ub, early_num::Int)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
         reset_b_vector(b,integer_vars) 
     end
+    simple_domain_propagation_4N_augmented!(b,-b[1])
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values)
     #= println(" A : ",A)
     println(" b ", b)
@@ -73,7 +89,8 @@ function compute_lb(solver, n, fixed_x_indices, fix_x_values,integer_vars, best_
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub)
     if isnothing(solution)
-        printstyled("Node early termination\n", color = :red)
+        early_num += 1
+        printstyled("Node early termination, increase counter by 1 \n", color = :red)
         return Inf, [Inf for _ in 1:n]
     end
     if solution.status== Clarabel.SOLVED
@@ -189,6 +206,7 @@ end
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n))
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
+    early_num = 0
     best_feasible_solution = zeros(n)
     node_queue = Vector{BnbNode}()
     max_nb_nodes = 100
@@ -244,7 +262,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, best_ub) 
+        l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, best_ub, early_num) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left, fixed_x_indices, fixed_x_left,l̃)) 
@@ -264,7 +282,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars, best_ub)
+        l̄, relaxed_x_right = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars, best_ub, early_num)
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, fixed_x_indices,fixed_x_right,l̄))
@@ -292,63 +310,3 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     
     return best_ub, best_feasible_solution
 end
-
-function getData(n,m,k)
-    integer_vars = sample(1:n, m, replace = false)
-    sort!(integer_vars)
-    Q = Matrix{Float64}(I, n, n) 
-    Random.seed!(1234)
-    c = rand(Float64,n)
-        # check against Gurobi
-    exact_model = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(exact_model, "OutputFlag", 0)
-    x = @variable(exact_model, x[i = 1:n])
-    for bin in integer_vars
-        set_integer(x[bin])
-    end
-    @objective(exact_model, Min, x'*Q*x + c'*x)
-    @constraint(exact_model, sum_constraint, sum(x) == k)
-    optimize!(exact_model)
-    println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
-
-    optimizer = Clarabel.Optimizer
-    old_model = build_unbounded_base_model(optimizer,n,k,Q,c)
-    solve_base_model(old_model,integer_vars)    #solve in Clarabel the relaxed problem
-    P,q,A,b, cones= getClarabelData(old_model)
-    return P,q,A,b,cones, integer_vars, exact_model
-    
-end
-function main_Clarabel()
-    n = 6
-    m = 6
-    k = 5
-    ϵ = 0.00000001
-
-    P,q,A,b, cones, integer_vars, exact_model= getData(n,m,k)
-    
-    Ā,b̄, s̄= getAugmentedData(A,b,cones,integer_vars,n)
-    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
-    solver   = Clarabel.Solver()
-
-    Clarabel.setup!(solver, P, q, Ā, b̄, s̄, settings)
-    
-    result = Clarabel.solve!(solver, Inf)
-
-
-    #start bnb loop
-    println("STARTING CLARABEL BNB LOOP ")
-
-    time_taken = @elapsed begin
-     best_ub, feasible_solution = branch_and_bound_solve(solver, result,n,ϵ, integer_vars) 
-    end
-    println("Time taken by bnb loop: ", time_taken)
-    println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
-    println("Compare with exact: ", round(norm(feasible_solution - value.(exact_model[:x]))),round(best_ub-objective_value(exact_model)))
-    println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
-
-    
-    return solver
-end
-
-main_Clarabel()
