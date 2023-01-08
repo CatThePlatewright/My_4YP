@@ -79,12 +79,12 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     end
     simple_domain_propagation_4N_augmented!(b,-b[1])
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values)
-    #= println(" A : ",A)
+    println(" A : ",A)
     println(" b ", b)
     println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
-    println(" Solver.variables.s : ", solver.variables.s) =#
+    println(" Solver.variables.s : ", solver.variables.s) 
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub)
@@ -113,7 +113,7 @@ end
 
 function solve_in_Clarabel(solver, best_ub)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
-    #reset_solver!(solver) #TODO: maybe not needed?
+    #reset_solver!(solver) 
     result = Clarabel.solve!(solver, best_ub)
 
     return result
@@ -209,7 +209,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     early_num = 0
     best_feasible_solution = zeros(n)
     node_queue = Vector{BnbNode}()
-    max_nb_nodes = 100
+    max_nb_nodes = 50
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
         println("Solution x of unbounded base model: ", base_solution.x)
@@ -308,5 +308,5 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("iteration : ", iteration)
     end
     
-    return best_ub, best_feasible_solution
+    return best_ub, best_feasible_solution, early_num
 end

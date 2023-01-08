@@ -37,8 +37,8 @@ function main_Clarabel()
     k = 3
     ϵ = 0.00000001
 
-    P,q,A,b, cones, integer_vars, exact_model= getData(n,m,k)
-    Ā,b̄, s̄= getAugmentedData(A,b,cones,integer_vars,n)
+    P,q,Ā,b̄, s̄, integer_vars, exact_model= getData(n,m,k)
+    #Ā,b̄, s̄= getAugmentedData(A,b,cones,integer_vars,n)
     simple_domain_propagation_4N_augmented!(b̄,k)
     println("Domain propagated b: ", b̄)
     println("Setting up Clarabel solver...")
@@ -54,14 +54,14 @@ function main_Clarabel()
     println("STARTING CLARABEL BNB LOOP ")
 
     time_taken = @elapsed begin
-     best_ub, feasible_solution = branch_and_bound_solve(solver, result,n,ϵ, integer_vars) 
+     best_ub, feasible_solution, early_num = branch_and_bound_solve(solver, result,n,ϵ, integer_vars) 
     end
     println("Time taken by bnb loop: ", time_taken)
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
     println("Compare with exact: ", round(norm(feasible_solution - value.(exact_model[:x]))),round(best_ub-objective_value(exact_model)))
     println("Exact solution: ", objective_value(exact_model) , " using ", value.(exact_model[:x])) 
-
+    println("Number of early terminated nodes: ", early_num)
     
     return solver
 end
