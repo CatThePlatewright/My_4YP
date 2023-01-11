@@ -32,9 +32,9 @@ function getData(n,m,k)
     
 end
 function main_Clarabel()
-    n = 2
-    m = 2
-    k = 3
+    n = 3
+    m = 3
+    k = -2
     ϵ = 0.00000001
 
     P,q,Ā,b̄, s̄, integer_vars, exact_model= getData(n,m,k)
@@ -42,7 +42,7 @@ function main_Clarabel()
     simple_domain_propagation_4N_augmented!(b̄,k)
     println("Domain propagated b: ", b̄)
     println("Setting up Clarabel solver...")
-    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+    settings = Clarabel.Settings(verbose = true, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
     Clarabel.setup!(solver, P, q, Ā, b̄, s̄, settings)

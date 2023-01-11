@@ -36,7 +36,7 @@ A and b are the augmented data.A and data.b :
  0  0   ... 1]            1000]  --> double the last 2N rows for augmented data
  we tighten 1000 to k for all variables"""
 function simple_domain_propagation_4N_augmented!(b,k)
-    replace!(b,1000=>k)
+    replace!(b,1000=>1)
     
 end
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values)    
@@ -85,6 +85,9 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
     println(" Solver.variables.s : ", solver.variables.s) 
+    println("Tau is ", solver.variables.τ)
+    println("normalised z: ", solver.variables.z*inv(solver.variables.τ))
+    println("0.5*x'data.P*x: ", 0.5* solver.variables.x'*solver.data.P*solver.variables.x)
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub)
