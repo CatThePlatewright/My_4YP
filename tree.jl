@@ -90,9 +90,10 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
     depth::Int
     fixed_x_ind::Vector{Int} 
     fixed_x_values::Vector{Float64} # to which value is it bounded 
+    upper_or_lower_vec::Vector{Int}
     lb::Float64 # on objective_value
-    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values,lb) 
-       return new(solver, false, deepcopy(solution), length(fixed_x_ind),fixed_x_ind,fixed_x_values, lb)
+    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb) 
+       return new(solver, false, deepcopy(solution), length(fixed_x_ind),fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb)
     end
 end
 

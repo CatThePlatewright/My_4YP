@@ -35,9 +35,12 @@ A and b are the augmented data.A and data.b :
  0  1   ... 0;  * x <=    1000
  0  0   ... 1]            1000]  --> double the last 2N rows for augmented data
  we tighten 1000 to k for all variables"""
-function simple_domain_propagation_4N_augmented!(b,k)
-    replace!(b,1000=>1)
-    
+function simple_domain_propagation!(b,k)
+    if k < 0
+        replace!(b,1000=>1) #TODO
+    else
+        replace!(b,1000=>k)
+    end
 end
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values)    
     if isnothing(fixed_x_indices) 
@@ -61,47 +64,66 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
     return b
 
 end
+function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)    
+    if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
+        m = length(integer_vars)
+        # match the indices to the indices in augmented vector b (which only augmented for integer_vars)
+        # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
+        indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
+        for (i,j,k) in zip(indices_in_b, fix_values, upper_or_lower_vec)
+            if k == 1
+                println("set upper bound for index: ", i," to ", j)
+                # this is for x[i] <= value which are in the last m:end elements of augmented b
+                b[end-m+i] = j
+            elseif k == -1
+                println("set lower bound for index: ", i," to ", -j)
+                # this is for x[i] >= value which are in the last 2m:m elements of augmented b
+                b[end-2*m+i] = -j # needs negative j for the NonnegativeConeT constraint
+            end
+        end
+            
+        
+    end
+    return b
+end
 function reset_b_vector(b::Vector,integer_vars::Vector)
     m = length(integer_vars)
-    b[end-2*m+1:end-m]=zeros(m)
+    b[end-2*m+1:end-m]=ones(m)
     b[end-m+1:end] = infinity*ones(m)
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, best_ub, early_num::Int)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
         reset_b_vector(b,integer_vars) 
     end
-    simple_domain_propagation_4N_augmented!(b,-b[1])
-    b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values)
+    simple_domain_propagation!(b,-b[1])
+    b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
     println(" A : ",A)
     println(" b ", b)
-    println("cones : ", solver.cones.cone_specs)
+    #= println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
-    println(" Solver.variables.s : ", solver.variables.s) 
-    println("Tau is ", solver.variables.τ)
-    println("normalised z: ", solver.variables.z*inv(solver.variables.τ))
-    println("0.5*x'data.P*x: ", 0.5* solver.variables.x'*solver.data.P*solver.variables.x)
+    println(" Solver.variables.s : ", solver.variables.s)  =#
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub)
     if isnothing(solution)
-        early_num += 1
+        early_num = early_num+ 1
         printstyled("Node early termination, increase counter by 1 \n", color = :red)
-        return Inf, [Inf for _ in 1:n]
+        return Inf, [Inf for _ in 1:n], early_num
     end
     if solution.status== Clarabel.SOLVED
         println("Values of relaxed solution ", solution.x)
-        return solution.obj_val, solution.x
+        return solution.obj_val, solution.x, early_num
     else 
         println("Infeasible or early terminated relaxed problem")
-        return Inf, [Inf for _ in 1:n]
+        return Inf, [Inf for _ in 1:n], early_num
     end
 end
 
@@ -219,7 +241,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         # this is our root node of the binarytree
-        root = BnbNode(ClarabelNodeData(solver,base_solution.x,[],[],lb)) #base_solution is node.data.Model
+        root = BnbNode(ClarabelNodeData(solver,base_solution.x,[],[],[],lb)) #base_solution is node.data.Model
         node = root
         push!(node_queue,node)
         iteration = 0
@@ -260,15 +282,16 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always fixes the next variable to closest lower integer
         fixed_x_left = vcat(node.data.fixed_x_values, floor_value) 
+        upper_or_lower_vec_left = vcat(node.data.upper_or_lower_vec, 1)
         println("fixed_x_left: ", fixed_x_left)
 
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, best_ub, early_num) 
+        l̃, relaxed_x_left, early_num = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
-        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left, fixed_x_indices, fixed_x_left,l̃)) 
+        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
         check_lb_pruning(left_node,best_ub)
         # only perform upper bound calculation if not pruned:
@@ -284,11 +307,12 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the right child problem to get l-bar and u-bar
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
+        upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars, best_ub, early_num)
+        l̄, relaxed_x_right, early_num = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num)
         println("solved for l̄: ", l̄)
         #create new child node (right)
-        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, fixed_x_indices,fixed_x_right,l̄))
+        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         check_lb_pruning(right_node, best_ub)
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned

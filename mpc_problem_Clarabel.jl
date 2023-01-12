@@ -33,7 +33,7 @@ function generate_MPC_Clarabel(index=2400)
     # for -Ax ≤ -l constraints, consider only last 3N ([dim+1:end]) rows since no lower bound for (R-SB)*U ≤ S*X constraints (set to Inf)
     Ã = vcat(A, -A[dim+1:end,:], I, -I) 
     b̃ = vcat(u, -l[dim+1:end], ub, -lb)
-    s = Clarabel.NonnegativeConeT(length(b̃))
+    s = [Clarabel.NonnegativeConeT(length(b̃))]
     return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
 end
 function main_mpc()
@@ -52,7 +52,7 @@ function main_mpc()
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
-    Clarabel.setup!(solver, P, q, Ã, b̃, s, settings)
+    Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
     
     #=result = Clarabel.solve!(solver)
 
@@ -82,8 +82,7 @@ function main_mpc()
 	end)
 
 	optimize!(model)
-	println("Gurobi solution: ", JuMP.objective_value(model))
-    println("Exact solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    println("Gurobi solution: ", objective_value(model) , " using ", value.(model[:x])) 
     #println("Compare with exact: ", round(norm(feasible_solution - value.(model[:x]))),round(best_ub-objective_value(model)))
     
     return P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub

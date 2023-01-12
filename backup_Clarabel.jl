@@ -70,7 +70,7 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
 end
 function reset_b_vector(b::Vector,integer_vars::Vector)
     m = length(integer_vars)
-    b[end-2*m+1:end-m]=zeros(m)
+    b[end-2*m+1:end-m]=-1*ones(m)
     b[end-m+1:end] = infinity*ones(m)
 end
 ### OVERWRITE THE FOLLOWING FUNCTIONS FROM BINARY_SOLVER.JL
