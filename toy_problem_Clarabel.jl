@@ -54,7 +54,7 @@ function main_Clarabel()
     println("STARTING CLARABEL BNB LOOP ")
 
     time_taken = @elapsed begin
-     best_ub, feasible_solution, early_num = branch_and_bound_solve(solver, result,n,ϵ, integer_vars) 
+     best_ub, feasible_solution, early_num = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,false,false) 
     end
     println("Time taken by bnb loop: ", time_taken)
     println("Termination status of Clarabel solver:" , solver.info.status)

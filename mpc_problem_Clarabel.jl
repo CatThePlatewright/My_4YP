@@ -10,7 +10,7 @@ s.t.  l ≤ Ax ≤u,
 convert into IPM format:
 min ...
 s.t. Ãx ≤ b̃ 
-where Ã = [A -A I -I]' and b̃ = [u -l ux -lx]'
+where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
 
 function generate_MPC_Clarabel(index=2400)
@@ -31,8 +31,8 @@ function generate_MPC_Clarabel(index=2400)
     ub = fixed_data["i_u"] # upper bound on integer variables 
     dim = length(lb)
     # for -Ax ≤ -l constraints, consider only last 3N ([dim+1:end]) rows since no lower bound for (R-SB)*U ≤ S*X constraints (set to Inf)
-    Ã = vcat(A, -A[dim+1:end,:], I, -I) 
-    b̃ = vcat(u, -l[dim+1:end], ub, -lb)
+    Ã = vcat(A, -A[dim+1:end,:], -I, I)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
+    b̃ = vcat(u, -l[dim+1:end], -lb, ub)
     s = [Clarabel.NonnegativeConeT(length(b̃))]
     return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
 end
@@ -41,35 +41,37 @@ function main_mpc()
     println("Iteration: ", i)
 	P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
 	n = length(q)
-    println("P: ", P)
+    #= println("P: ", P)
     println("q : ", q)
     println("A : ", A)
     println("b : ", b)
-    println("s : ", s) 
-
+    println("s : ", s)  =#
     ϵ = 0.00000001
 
-    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+    settings = Clarabel.Settings(verbose = true, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
     Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
     
-    #=result = Clarabel.solve!(solver)
+    base_solution = Clarabel.solve!(solver)
+    println(base_solution)
+    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
 
-
-    #start bnb loop
+  #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
     time_taken = @elapsed begin
-     best_ub, feasible_solution = branch_and_bound_solve(solver, result,n,ϵ, i_idx) 
+     best_ub, feasible_base_solution = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx) 
     end
     println("Time taken by bnb loop: ", time_taken)
     println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
-=#
+    println("Found objective: ", best_ub, " using ", round.(feasible_base_solution,digits=3))
+
+    println(" ")
 
     model = Model(Gurobi.Optimizer)
-	@variable(model, x[1:n]);
+    set_optimizer_attribute(model, "OutputFlag", 0)
+	@variable(model, x[1:n])
 	set_integer.(x[i_idx])  #set integer constraints
 	@objective(model, Min, 0.5*x'*P*x + q' * x )
 	dim = length(lb)
@@ -82,10 +84,9 @@ function main_mpc()
 	end)
 
 	optimize!(model)
-    println("Gurobi solution: ", objective_value(model) , " using ", value.(model[:x])) 
-    #println("Compare with exact: ", round(norm(feasible_solution - value.(model[:x]))),round(best_ub-objective_value(model)))
+    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    println("Compare with exact: ", round(norm(feasible_base_solution - value.(model[:x])),digits=5), " ",round(best_ub-objective_value(model),digits=6))
     
-    return P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub
+    return 
 end
-
-P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub = main_mpc()
+main_mpc()
