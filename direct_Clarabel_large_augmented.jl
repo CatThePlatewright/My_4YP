@@ -193,16 +193,15 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
         return Inf, [Inf for _ in 1:n]
     end
     x = deepcopy(relaxed_vars) # TOASK
-    P = solver.data.P
+    P = solver.data.P #this is only the upper triangular part
     q = solver.data.q
-    
     for i in integer_vars
         x[i] = round(relaxed_vars[i]) 
     end
     println("rounded variables: ", x)
 
     if evaluate_constraint(solver,x)
-        obj_val = 0.5*x'*P*x + q'*x 
+        obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
         println("Valid upper bound : ", obj_val," using feasible x: ", x)
         return obj_val, x
     else 
@@ -247,8 +246,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         push!(node_queue,node)
         iteration = 0
         x = zeros(n)
-    #else 
-     #   term_status = "INFEASIBLE"
     end
     
 
@@ -328,13 +325,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
 
-#=        node_with_best_lb = minimum([l̄, l̃])==l̄ ? right_node : left_node
-        #back-propagate the new lb and ub to root
-        update_best_lb(node_with_best_lb)
-
-        # decide which child node to branch on next: pick the one with the lowest lb
-        node = branch_from_node(root) #TOASK Paul vs Yuwen: start from root at every iteration, trace down to the max. depth
-        update_best_lb(node)=#
         
         iteration += 1
         println("iteration : ", iteration)

@@ -17,6 +17,7 @@ function generate_MPC_Clarabel(index=2400)
     adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\adaptive_data.npy")
     fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\matrice_data.npy")
     P = fixed_data["P"]
+# check for solutions key in fixed_data?
     q = adaptive_data["q_array"][index,:]
     A = fixed_data["A"] # TOASK: removed minus sign for ADMM? do we still need negative sign with Clarabel uses Ax+s=b?
     b = zeros(size(A,1))
@@ -87,6 +88,6 @@ function main_mpc()
     println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
     println("Compare with exact: ", round(norm(feasible_base_solution - value.(model[:x])),digits=5), " ",round(best_ub-objective_value(model),digits=6))
     
-    return 
+    return P
 end
-main_mpc()
+P = main_mpc()
