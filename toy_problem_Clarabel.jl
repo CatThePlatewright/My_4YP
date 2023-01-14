@@ -1,4 +1,4 @@
-include("direct_Clarabel_large_augmented.jl")
+include("toy_bnb.jl")
 function getData(n,m,k)
     integer_vars = sample(1:n, m, replace = false)
     sort!(integer_vars)

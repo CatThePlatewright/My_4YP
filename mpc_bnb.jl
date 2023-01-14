@@ -1,71 +1,10 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
 
-
-function getClarabelData(model::Model)
-    # access the Clarabel solver object
-    solver = JuMP.unsafe_backend(model).solver
-    # now you can get data etc
-    data = solver.data
-    P = data.P
-    q = data.q
-    A = data.A
-    b = data.b
-    s = solver.cones.cone_specs
-    return P,q,A,b,s
-end
-function getAugmentedData(A::SparseMatrixCSC,b::Vector,cones::Vector,integer_vars::Vector,n::Int)
-    m = length(integer_vars)
-    A2 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m),m,n) #corresponding to lower bound constraints -x+s= -b
-    A3 = sparse(collect(1:m),[i for i in integer_vars] ,ones(m),m,n)#corresponding to upper bound constraints x+s= b
-    A = sparse_vcat(A,A2, A3)
-    b = vcat(b,zeros(m),infinity*ones(m)) #initialise it to redundant constraints
-    
-    cones = vcat(cones,Clarabel.NonnegativeConeT(2*m)) # this is so that we can modify it to ZeroconeT afterwards
-    
-    return A,b, cones
-end
-"""very simple domain propagation to tighten mainly upper bounds on x variables.
-A and b are the augmented data.A and data.b : 
-[-1 -1 ... -1;          [-k
--1  0   ... 0;           0
- 0  -1   ... 0;          0
- 0  0   ... -1;          0
- 1  0   ... 0;            1000
- 0  1   ... 0;  * x <=    1000
- 0  0   ... 1]            1000]  --> double the last 2N rows for augmented data
- we tighten 1000 to k for all variables"""
-function simple_domain_propagation!(b,k)
-    if k < 0
-        replace!(b,1000=>1) #TODO
-    else
-        replace!(b,1000=>k)
-    end
+function domain_propagation()
+    return
 end
 
-"""This function does not use the upper or lower bounds vector for each node. Works only for natural not negative integer variables"""
-function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values)    
-    if isnothing(fixed_x_indices) 
-        return b
-    end
-    m = length(integer_vars)
-    # match the indices to the indices in augmented vector b (which only augmented for integer_vars)
-    # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
-    indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
-    for (i,j) in zip(indices_in_b, fix_values)
-        if j >= 0
-            println("set upper bound for index: ", i," to ", j)
-            # this is for x[i] <= value which are in the last m:end elements of augmented b
-            b[end-m+i] = j
-        else
-            println("set lower bound for index: ", i," to ", -j)
-            # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-            b[end-2*m+i] = j 
-        end
-    end
-    return b
-
-end
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
         m = length(integer_vars)
@@ -80,7 +19,7 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
             elseif k == -1
                 println("set lower bound for index: ", i," to ", -j)
                 # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-                b[end-2*m+i] = -j # needs negative j for the NonnegativeConeT constraint
+                b[end-2*m+i] = j # is already passed as negative l in x[i] >= l
             end
         end
             
@@ -90,8 +29,8 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
 end
 function reset_b_vector(b::Vector,integer_vars::Vector)
     m = length(integer_vars)
-    b[end-2*m+1:end-m]=ones(m)
-    b[end-m+1:end] = infinity*ones(m)
+    b[end-2*m+1:end-m]=ones(m) # previous last 2m rows correspond to lb on x in the form of -x<= -lb
+    b[end-m+1:end] = ones(m) #last 2m rows correspond to ub on x
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
@@ -104,10 +43,9 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
         #relax all integer variables before adding branching bounds specific to this node
         reset_b_vector(b,integer_vars) 
     end
-    simple_domain_propagation!(b,-b[1])
+    #TODO domain_propagation!(b,-b[1])
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
-    println(" A : ",A)
-    println(" b ", b)
+    println(" lb and ub in b ", b[end-2*n+1:end])
     #= println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
@@ -129,20 +67,11 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     end
 end
 
-function reset_solver!(solver)
-    n = solver.data.n
-    solver.variables = Clarabel.DefaultVariables{Float64}(n, solver.cones)
-    solver.residuals = Clarabel.DefaultResiduals{Float64}(n, solver.data.m)
-    solver.info = Clarabel.DefaultInfo{Float64}()
-    solver.prev_vars = Clarabel.DefaultVariables{Float64}(n, solver.cones)
-    solver.solution = Clarabel.DefaultSolution{Float64}(solver.data.m,n)
-end 
 
 function solve_in_Clarabel(solver, best_ub, early_term_enable)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
     #reset_solver!(solver) 
     result = Clarabel.solve!(solver, best_ub, early_term_enable)
-
     return result
 end
 
@@ -160,24 +89,15 @@ function evaluate_constraint(solver,x)
             k = j:j+cone_specs[i].dim-1
             
             if t == Clarabel.ZeroConeT
-                println("Evaluating ", residual[k], " == 0 ?")
                 if ~all(isapprox.(residual[k],0,atol = 1e-3))
                     return false
                 end
-                
-            
             elseif t == Clarabel.NonnegativeConeT
-                println("Evaluating ", residual[k], ">= 0 ?")
-
                 if minimum(residual[k])< 0
                     return false
-                    
                 end
-
             end
             j = j+ cone_specs[i].dim
-            
-
         end 
     end
     return true
@@ -212,7 +132,7 @@ end
 
 function check_lb_pruning(node, best_ub)
     println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
-    if node.data.lb - best_ub >1e-3 || node.data.lb == Inf
+    if node.data.lb - best_ub >1e-4 || node.data.lb == Inf
         println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
     end

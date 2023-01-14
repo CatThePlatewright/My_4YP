@@ -77,10 +77,11 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
                 println("set upper bound for index: ", i," to ", j)
                 # this is for x[i] <= value which are in the last m:end elements of augmented b
                 b[end-m+i] = j
+
             elseif k == -1
                 println("set lower bound for index: ", i," to ", -j)
                 # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-                b[end-2*m+i] = -j # needs negative j for the NonnegativeConeT constraint
+                b[end-2*m+i] = j 
             end
         end
             
@@ -106,8 +107,8 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     end
     simple_domain_propagation!(b,-b[1])
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
-    println(" A : ",A)
-    println(" b ", b)
+    
+
     #= println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
