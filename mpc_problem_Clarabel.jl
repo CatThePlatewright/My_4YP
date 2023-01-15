@@ -14,8 +14,8 @@ where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
 
 function generate_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\adaptive_data.npy")
-    fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\matrice_data.npy")
+    adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\adaptive_data.npy")
+    fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\matrice_data.npy")
     P = fixed_data["P"]
     q = adaptive_data["q_array"][index,:]
     A = fixed_data["A"] # TOASK: removed minus sign for ADMM? do we still need negative sign with Clarabel uses Ax+s=b?
@@ -37,8 +37,8 @@ function generate_MPC_Clarabel(index=2400)
     return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
 end
 function main_mpc()
-    start_horizon = 1000
-    end_horizon = 2400
+    start_horizon = 1
+    end_horizon = 10
     for i = start_horizon:end_horizon
         println("Iteration: ", i)
         P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
@@ -78,7 +78,7 @@ function main_mpc()
     #start bnb loop
         println("STARTING CLARABEL BNB LOOP ")
 
-        best_ub, feasible_base_solution = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true) 
+        best_ub, feasible_base_solution = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false) 
         
         println("Termination status of Clarabel solver:" , solver.info.status)
         println("Found objective: ", best_ub, " using ", round.(feasible_base_solution,digits=3))
