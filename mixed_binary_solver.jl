@@ -162,15 +162,18 @@ end
 "return the next variable to branch on/fix to binary value, splitting rule: most uncertain variable (i.e. closest to 0.5)
 integer_vars is the SORTED list of binary variables within the model vars, only select from these
 fixed_x_indices is the vector of already fixed variable indices, these should not be considered!"
-function pick_index(x, integer_vars, fixed_x_indices)
+function pick_index(x, integer_vars, fixed_x_indices, debug_print)
     @assert issorted(integer_vars)
     remaining_branching_vars = setdiff(integer_vars, fixed_x_indices)
     if isempty(remaining_branching_vars)
         error("empty set remaining_branching_vars! should not happen, check ub-lb < ϵ")
     end
-    println("remaining_branching_vars : ", remaining_branching_vars)
     frac_part = broadcast(v -> abs(v - round(v)), x[remaining_branching_vars])
-    println("pickindex frac_part: ", frac_part)
+
+    if debug_print
+        println("remaining_branching_vars : ", remaining_branching_vars)
+        println("pickindex frac_part: ", frac_part)
+    end
     index_of_max = argmax(frac_part)
     idx = remaining_branching_vars[index_of_max]
     return idx
