@@ -98,7 +98,7 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
@@ -115,19 +115,19 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     println(" Solver.variables.s : ", solver.variables.s)  =#
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
-    solution = solve_in_Clarabel(solver, best_ub, early_term_enable)
+    solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start,λ, prev_x, prev_z, prev_s)
     total_iter += solver.info.iterations
     if isnothing(solution)
         early_num = early_num+ 1
         printstyled("Node early termination, increase counter by 1 \n", color = :red)
-        return Inf, [Inf for _ in 1:n], early_num, total_iter
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter
     end
     if solution.status== Clarabel.SOLVED
         println("Values of relaxed solution ", solution.x)
-        return solution.obj_val, solution.x, early_num, total_iter
+        return solution.obj_val, solution.x, solution.z, solution.s, early_num, total_iter
     else 
         println("Infeasible or early terminated relaxed problem")
-        return Inf, [Inf for _ in 1:n], early_num, total_iter
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter
     end
 end
 
@@ -140,10 +140,10 @@ function reset_solver!(solver)
     solver.solution = Clarabel.DefaultSolution{Float64}(solver.data.m,n)
 end 
 
-function solve_in_Clarabel(solver, best_ub, early_term_enable)
+function solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start::Bool, λ,  prev_x, prev_z, prev_s)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
     #reset_solver!(solver) 
-    result = Clarabel.solve!(solver, best_ub, early_term_enable)
+    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, true, λ, prev_x, prev_z, prev_s)
 
     return result
 end
@@ -233,7 +233,7 @@ function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,
 end
 
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true)
+function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -245,10 +245,13 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
         println("Solution x of unbounded base model: ", base_solution.x)
+        println("Solution z of unbounded base model: ", base_solution.z)
+        println("Solution s of unbounded base model: ", base_solution.s)
+
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         # this is our root node of the binarytree
-        root = BnbNode(ClarabelNodeData(solver,base_solution.x,[],[],[],lb)) #base_solution is node.data.Model
+        root = BnbNode(ClarabelNodeData(solver,base_solution.x,base_solution.z, base_solution.s,[],[],[],lb)) #base_solution is node.data.Model
         node = root
         push!(node_queue,node)
         iteration = 0
@@ -272,10 +275,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
             break
         end
         printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
-        println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution)
+        println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
 
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub -> use broadcasting
-        x .= node.data.solution
+        x .= node.data.solution_x
         if x != node.data.solver.solution.x
             printstyled("x is not equal to solver.solution.x\n",color= :red)
         end
@@ -293,10 +296,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable) 
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, λ, x, node.data.solution_z, node.data.solution_s) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
-        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
+        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
         if pruning_enable 
             check_lb_pruning(left_node,best_ub)
@@ -316,10 +319,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, early_num, total_iter = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable)
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter = compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable, warm_start,λ, x, node.data.solution_z, node.data.solution_s)
         println("solved for l̄: ", l̄)
         #create new child node (right)
-        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
+        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, z_right, s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         if pruning_enable
             check_lb_pruning(right_node, best_ub)
         end

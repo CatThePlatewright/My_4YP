@@ -86,14 +86,16 @@ mutable struct MyNodeData #mutable since lb and ub can be updated after first cr
  mutable struct ClarabelNodeData #mutable since lb and ub can be updated after first creation of node
     solver #the Clarabel solver object in Clarabel 
     is_pruned::Bool 
-    solution::Vector{Float64} # solution x to relaxed problem of node
+    solution_x::Vector{Float64} # solution x to relaxed problem of node
+    solution_z::Vector{Float64} # solution z to relaxed problem of node
+    solution_s::Vector{Float64} # solution s to relaxed problem of node
     depth::Int
     fixed_x_ind::Vector{Int} 
     fixed_x_values::Vector{Float64} # to which value is it bounded 
     upper_or_lower_vec::Vector{Int}
     lb::Float64 # on objective_value
-    function ClarabelNodeData(solver, solution, fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb) 
-       return new(solver, false, deepcopy(solution), length(fixed_x_ind),fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb)
+    function ClarabelNodeData(solver, solution_x,solution_z, solution_s,fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb) 
+       return new(solver, false, deepcopy(solution_x), deepcopy(solution_z),deepcopy(solution_s), length(fixed_x_ind),fixed_x_ind,fixed_x_values, upper_or_lower_vec, lb)
     end
 end
 

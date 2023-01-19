@@ -230,7 +230,9 @@ function check_lb_pruning(node, best_ub)
     if node.data.lb - best_ub >1e-5 || node.data.lb == Inf
         println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
+        return true
     end
+    return false
 end
 
 function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth, total_iter::Int, fea_iter::Int)
@@ -261,7 +263,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         # this is our root node of the binarytree
-        root = BnbNode(ClarabelNodeData(solver,base_solution.x,[],[],[],lb)) #base_solution is node.data.Model
+        root = BnbNode(ClarabelNodeData(solver,base_solution.x,base_solution.z, base_solution.s,[],[],[],lb)) #base_solution is node.data.Model
         node = root
         push!(node_queue,node)
         iteration = 0
@@ -277,6 +279,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end 
         println(" ")
         println("Node queue length : ", length(node_queue))
+        
         # pick and remove node from node_queue
         node = splice!(node_queue,argmin(n.data.lb for n in node_queue))
 
@@ -286,11 +289,11 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
         if debug_print
-            println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution)
+            println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
         end
         
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub -> use broadcasting
-        x .= node.data.solution
+        x .= node.data.solution_x
         if x != node.data.solver.solution.x && debug_print
             printstyled("x is not equal to solver.solution.x\n",color= :red)
         end
@@ -313,7 +316,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         l̃, relaxed_x_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, debug_print) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
-        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
+        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,[],[], fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
         if pruning_enable 
             check_lb_pruning(left_node,best_ub)
@@ -338,7 +341,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         l̄, relaxed_x_right, early_num, total_iter= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start, debug_print)
         println("solved for l̄: ", l̄)
         #create new child node (right)
-        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
+        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right,[],[], fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         if pruning_enable
             check_lb_pruning(right_node, best_ub)
         end
@@ -352,7 +355,13 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if debug_print
             println("fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
         end
-
+        for i in 1:lastindex(node_queue)
+            if check_lb_pruning(node_queue[i],best_ub)
+                printstyled("Fathom node in queue with lb > U!\n", color = :red)
+                error("stop")
+                deleteat!(node_queue,i)
+            end
+        end
         
         iteration += 1 #TODO: could increment by 2 to count number of solved (or early_terminated) QPs
         println("BnB loop iteration : ", iteration)

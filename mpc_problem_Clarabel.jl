@@ -1,5 +1,6 @@
 using SparseArrays, LinearAlgebra
 using NPZ
+using JLD
 include("mpc_bnb.jl")
 """
 ADMM problem format:
@@ -42,8 +43,8 @@ without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
-start_horizon = 19
-end_horizon = 19
+start_horizon = 1
+end_horizon = 200
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
@@ -126,3 +127,4 @@ for i = start_horizon:end_horizon
     
 end 
    
+#save("mimpc_iterations_N=2_1to2400.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
