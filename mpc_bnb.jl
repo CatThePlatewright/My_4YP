@@ -355,12 +355,13 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if debug_print
             println("fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
         end
-        for i in 1:lastindex(node_queue)
-            if check_lb_pruning(node_queue[i],best_ub)
+        ind = 1
+        while ind ≤ lastindex(node_queue)
+            if check_lb_pruning(node_queue[ind],best_ub)
                 printstyled("Fathom node in queue with lb > U!\n", color = :red)
-                error("stop")
-                deleteat!(node_queue,i)
+                deleteat!(node_queue,ind)
             end
+            ind += 1
         end
         
         iteration += 1 #TODO: could increment by 2 to count number of solved (or early_terminated) QPs

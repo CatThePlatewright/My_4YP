@@ -15,8 +15,8 @@ where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
 
 function generate_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\adaptive_data.npy")
-    fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=2\\matrice_data.npy")
+    adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\adaptive_data.npy")
+    fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\matrice_data.npy")
     P = fixed_data["P"]
     q = adaptive_data["q_array"][index,:]
     A = fixed_data["A"] # TOASK: removed minus sign for ADMM? do we still need negative sign with Clarabel uses Ax+s=b?
@@ -44,7 +44,7 @@ with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
 start_horizon = 1
-end_horizon = 200
+end_horizon = 2400
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
@@ -127,4 +127,4 @@ for i = start_horizon:end_horizon
     
 end 
    
-#save("mimpc_iterations_N=2_1to2400.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("mimpc_iterations_N=8_1to2400.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)

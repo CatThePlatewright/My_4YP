@@ -213,11 +213,13 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
 end
 
 function check_lb_pruning(node, best_ub)
-    println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
-    if node.data.lb - best_ub >1e-3 || node.data.lb == Inf
+    #println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
+    if node.data.lb - best_ub >1e-5 || node.data.lb == Inf
         println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
+        return true
     end
+    return false
 end
 
 function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,total_iter::Int, fea_iter::Int)
@@ -239,7 +241,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     early_num = 0
     best_feasible_solution = zeros(n)
     node_queue = Vector{BnbNode}()
-    max_nb_nodes = 50
+    max_nb_nodes = 200
     total_iter = 0
     fea_iter = 0
     if base_solution.status == Clarabel.SOLVED
@@ -311,7 +313,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
             best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter)
             push!(node_queue,left_node)
         end
-        println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
+        #println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
         println(" ")
         
         # solve the right child problem to get l-bar and u-bar
@@ -333,9 +335,16 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
             best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter)
             push!(node_queue,right_node)
         end
-        println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
+        #println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
 
-        
+        ind = 1
+        while ind ≤ lastindex(node_queue)
+            if check_lb_pruning(node_queue[ind],best_ub)
+                printstyled("Fathom node in queue with lb > U!\n", color = :red)
+                deleteat!(node_queue,ind)
+            end
+            ind += 1
+        end
         iteration += 1
         println("iteration : ", iteration)
     end
