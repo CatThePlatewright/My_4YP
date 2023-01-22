@@ -36,8 +36,8 @@ end
 
 n_range = 5:15
 k_range = -1:4
-ϵ = 0.00000001
 λ = 0.99
+ϵ = 0.00000001
 without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
@@ -63,7 +63,7 @@ for n in n_range
         println("STARTING CLARABEL BNB LOOP ")
 
         time_taken = @elapsed begin
-            best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,true,true,true) 
+            best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,true,true,true,λ) 
         end
         println("Time taken by bnb loop: ", time_taken)
         println("Termination status of Clarabel solver:" , solver.info.status)
@@ -86,7 +86,7 @@ for n in n_range
         Clarabel.setup!(solver_without, P, q, A, b,s, settings)
 
         base_solution_without = Clarabel.solve!(solver_without)
-        best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, integer_vars, true, true, false) 
+        best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, integer_vars, true, true, false,λ) 
         println("Found objective without early_term: ", best_ub_without)
         println("Number of early terminated nodes (without): ", early_num_without)
         printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)

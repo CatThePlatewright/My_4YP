@@ -19,7 +19,7 @@ function generate_MPC_Clarabel(index=2400)
     fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\matrice_data.npy")
     P = fixed_data["P"]
     q = adaptive_data["q_array"][index,:]
-    A = fixed_data["A"] # TOASK: removed minus sign for ADMM? do we still need negative sign with Clarabel uses Ax+s=b?
+    A = fixed_data["A"] 
     b = zeros(size(A,1))
     index_set = fixed_data["i_idx"] .+ 1 # offset by 1 since extracted from python array starting from 0 not 1 as in julia
 
@@ -43,8 +43,8 @@ without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
-start_horizon = 1
-end_horizon = 2400
+start_horizon = 2200
+end_horizon = 2300
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
@@ -63,7 +63,6 @@ for i = start_horizon:end_horizon
         b[dim+1:end] + A[dim+1:end,:]*x .>= l[dim+1:end] # TOASK: confirm that A should be +fixed_data not -?
         b + A*x .<= u
     end)
-
     optimize!(model)
     println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
     #= println("P: ", P)
@@ -71,6 +70,7 @@ for i = start_horizon:end_horizon
     println("A : ", A)
     println("b : ", b)
     println("s : ", s)  =#
+    λ=0.99
     ϵ = 1e-8
 
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
@@ -84,7 +84,7 @@ for i = start_horizon:end_horizon
 #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, true, λ,false) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -109,7 +109,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,false) 
     println("Found objective without early_term: ", best_ub_without)
     println("Number of early terminated nodes (without): ", early_num_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
@@ -127,4 +127,4 @@ for i = start_horizon:end_horizon
     
 end 
    
-save("mimpc_iterations_N=8_1to2400.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("mimpc_iterations_N=8_warmstart.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)

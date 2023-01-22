@@ -244,6 +244,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     max_nb_nodes = 200
     total_iter = 0
     fea_iter = 0
+
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
         println("Solution x of unbounded base model: ", base_solution.x)

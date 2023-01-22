@@ -1,17 +1,23 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
-function domain_propagation(A,b,n, i_idx)
-    #unscaling matrices
-    A= A[1:end-2*n,:]
-    m, n = size(A)
 
-    u = b[1:end-2*n]
-    l = u # provisionally, for l <= sum(x)<= u where u=l= -k; we have -sum(x)  + ZeroConeT = -k
-    
-    lb = -b[end-2*n+1:end-n] #TODO possibly sign reverse
+"""domain propagation for MIMPC in IPM format:
+min ...
+s.t. Ãx ≤ b̃ 
+where Ã = vcat(A, -A[m+1:end,:], -I, I), m = length(u) # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
+b̃ = vcat(u, -l[m+1:end], -lb, ub)        # ATTENTION: true vector l is only 6=12:18(length of extracted l) long, note: u is 18 long for N=2, u+l has length 12*N
+where A is of size (m/2)xn and I is nxn
+
+"""
+function domain_propagation_mpc!(Ã,b,n,i_idx)
+    m = Int(3*n / 2) # find how long the original vector u is since we concatenated u into b in getClarabelData()
+    A= Ã[1:m,:]
+    u = b[1:m]
+    l = vcat(-infinity*ones(n), -b[m+1:end-2*n] ) #concatenate n times -inf's (paddings) with true lower bounds l (only 6-element long for N=2) -> gives length of m
+    lb = -b[end-2*n+1:end-n] 
     ub = b[end-n+1:end]
 
-    flag = true #check whether domain propogation is effective
+    flag = true #check whether domain propagation is effective
 
     while flag
         pre_lb = deepcopy(lb)
@@ -30,32 +36,44 @@ function domain_propagation(A,b,n, i_idx)
                         continue
                     end
                     #check the sign of coefficient, e.g. -1*xi <= -l for xi>= l
-                    if value[j] < 0  #provisionally A[1,:] = -ones
+                    if value[j] > 0 
                         upper -= value[j]*lb[column[j]]
-                        lower -= value[j]*ub[column[j]]
+                        if lower != -infinity  # no need to update lower bounds when it is -Inf since it is a padding only
+                            lower -= value[j]*ub[column[j]]
+                        end
                     else
                         upper -= value[j]*ub[column[j]]
-                        lower -= value[j]*lb[column[j]]
+                        if lower != infinity
+                            lower -= value[j]*lb[column[j]]
+                        end
                     end
                 end
 
                 #update bound
-                if value[i] < 0
+                if value[i] > 0
                     ub[column[i]] = min(ub[column[i]], upper/value[i])
                     lb[column[i]] = max(lb[column[i]], lower/value[i])
                 else
                     ub[column[i]] = min(ub[column[i]], lower/value[i])
                     lb[column[i]] = max(lb[column[i]], upper/value[i])
                 end
-
                 #tighten bound for integer variables
                 @. ub[i_idx] = floor(ub[i_idx])
                 @. lb[i_idx] = ceil(lb[i_idx])
             end
+            
+
+        end
+        if ub != pre_ub 
+            println("domain_propagation_mpc: updated upper bounds", ub)
+        end
+        if lb != pre_lb
+            println("domain_propagation_mpc: updated lower bounds", lb)
         end
 
         #domain propogation ends (convergence)
         if (lb == pre_lb) && (ub == pre_ub)
+            println("domain_propagation_mpc: convergence")
             flag = false
         end
         
@@ -64,9 +82,11 @@ function domain_propagation(A,b,n, i_idx)
     #only update lb ≤ x ≤ ub at present
 
     #detect infeasibility, return immediately
-    if !(lb <= ub)
-        #op.status = :primal_infeasible
-        println("Detect primal infeasibility in domain propogation")
+    if (lb .<= ub)!=ones(length(lb))
+        println("Detect primal infeasibility in domain propagation")
+        println(ub)
+        println(lb)
+        return Inf
     end
 #= TODO: not sure what this is in IPM
     #Finally, reset ρ_x when it is an equality constraint as lb,ub changed
@@ -80,16 +100,8 @@ function domain_propagation(A,b,n, i_idx)
     #reset the indirect matrix due to the change of ρ
     op.indirect_mat .= op.P + diagm(0 => op.sigma * ones(n)) + diagm(0 => op.ρ_x) + op.A' * diagm(0 => op.ρ) * op.A 
 =#
-end
-function test_domain_prop()
-    n= 2
-    m = 2
-    k = 5
-    A = sparse([1, 2, 4, 1, 3, 5], [1, 1, 1, 2, 2, 2], [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0], 5, 2)
-    b = [-5.0, 1.0, 1.0, 1000.0, 1000.0]
-
-    b = domain_propagation(A,b,n,collect(1:n))
-    return b
+    b .= vcat(u, -l[n+1:end], -lb, ub)
+    return 1
 end
 
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec, debug_print=false)    
@@ -127,44 +139,48 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, total_iter::Int,early_term_enable::Bool, warm_start::Bool,debug_print::Bool)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, total_iter::Int,early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
         reset_b_vector(b,integer_vars) 
     end
-    #TODO domain_propagation!(b,-b[1])
+    
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec, debug_print)
+    domain_prop = domain_propagation_mpc!(A,b,n,integer_vars)
+    if isinf(domain_prop)
+        println("Infeasible relaxed problem")
+        return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
+    end
     #= println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
     println(" Solver.variables.s : ", solver.variables.s)  =#
+    println("domain_prop debug solver.data.b is b: ", solver.data.b==b)
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
-    solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, debug_print)
+    solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, λ, prev_x, prev_z, prev_s,debug_print)
     total_iter += solver.info.iterations
     if isnothing(solution)
         early_num = early_num+ 1
         printstyled("Node early termination, increase counter by 1 \n", color = :red)
-        return Inf, [Inf for _ in 1:n], early_num, total_iter
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter
     end
     if solution.status== Clarabel.SOLVED
         if debug_print
             println("Values of relaxed solution ", solution.x)
         end
-        return solution.obj_val, solution.x, early_num, total_iter
+        return solution.obj_val, solution.x,solution.z, solution.s, early_num, total_iter
     else 
-        println("Infeasible or early terminated relaxed problem")
-        return Inf, [Inf for _ in 1:n], early_num, total_iter
+        println("Infeasible relaxed problem")
+        return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
     end
 end
 
 
-function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start::Bool, debug_print::Bool)
-    # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
-    #reset_solver!(solver) 
-    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, debug_print)
+function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start::Bool,λ, prev_x, prev_z, prev_s, debug_print::Bool)
+    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, debug_print,λ, prev_x, prev_z, prev_s)
     return result
 end
 
@@ -248,7 +264,7 @@ function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,
 end
 
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, debug_print::Bool = true)
+function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0, debug_print::Bool = true)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -313,10 +329,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, debug_print) 
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable,warm_start, λ, x, node.data.solution_z, node.data.solution_s, debug_print) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
-        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,[],[], fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
+        left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
         if pruning_enable 
             check_lb_pruning(left_node,best_ub)
@@ -338,10 +354,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, early_num, total_iter= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start, debug_print)
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start,λ, x, node.data.solution_z, node.data.solution_s, debug_print)
         println("solved for l̄: ", l̄)
         #create new child node (right)
-        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right,[],[], fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
+        right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right,z_right,s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         if pruning_enable
             check_lb_pruning(right_node, best_ub)
         end
