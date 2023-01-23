@@ -2,10 +2,10 @@
 using JLD
 using PyPlot
 
-with_iter = load("mimpc_iterations_N=8_warmstart.jld","with_iter")
-without_iter = load("mimpc_iterations_N=8_warmstart.jld", "without_iter")
-first_iter_num = load("mimpc_iterations_N=8_warmstart.jld", "first_iter_num")
-
+with_iter = load("mimpc_iterations_N=8_warmstart_select_leaf.jld","with_iter")
+without_iter = load("mimpc_iterations_N=8_warmstart_select_leaf.jld", "without_iter")
+first_iter_num = load("mimpc_iterations_N=8_warmstart_select_leaf.jld", "first_iter_num")
+with_iter2 = load("mimpc_iterations_N=8_warmstart.jld","with_iter")
 
 start_idx = 1
 end_idx = 100

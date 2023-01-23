@@ -79,8 +79,6 @@ function domain_propagation_mpc!(Ã,b,n,i_idx)
         
     end
 
-    #only update lb ≤ x ≤ ub at present
-
     #detect infeasibility, return immediately
     if (lb .<= ub)!=ones(length(lb))
         println("Detect primal infeasibility in domain propagation")
@@ -88,18 +86,6 @@ function domain_propagation_mpc!(Ã,b,n,i_idx)
         println(lb)
         return Inf
     end
-#= TODO: not sure what this is in IPM
-    #Finally, reset ρ_x when it is an equality constraint as lb,ub changed
-    #reset penalty parameter ρ_x
-    op.ρ_x = 1e0 * ones(n); 
-
-    #set ρ_x in equality constraints 1000x times larger
-    eq_ind_x = broadcast(==, op.lb, op.ub)
-    @. op.ρ_x[eq_ind_x] = 1e3*op.ρ_x[eq_ind_x]
-
-    #reset the indirect matrix due to the change of ρ
-    op.indirect_mat .= op.P + diagm(0 => op.sigma * ones(n)) + diagm(0 => op.ρ_x) + op.A' * diagm(0 => op.ρ) * op.A 
-=#
     b .= vcat(u, -l[n+1:end], -lb, ub)
     return 1
 end
@@ -262,7 +248,32 @@ function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,
     end
     return best_ub, best_feasible_solution, fea_iter
 end
+#select a leaf from leaves for computing
+function select_leaf(node_queue::Vector{BnbNode}, best_ub)
+    #depth first until find the first feasible solution
+    if best_ub == Inf
+        depth_set = []
+        for node in node_queue
+            push!(depth_set, node.depth)
+        end
+        depth = maximum(depth_set)
+        max_set = findall(x -> x == depth, depth_set)
 
+        index = 1
+        #Find the one with the lowest bound
+        lower_bound = Inf
+        for i = 1:lastindex(max_set)
+            if node_queue[max_set[i]].lb < lower_bound
+                index = i
+            end
+        end 
+
+        return splice!(node_queue, max_set[index])    #delete and return the selected leaf
+    #best bound when we have a feasible solution
+    else
+        return splice!(node_queue,argmin(n.data.lb for n in node_queue))    #delete and return the selected leaf
+    end
+end
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0, debug_print::Bool = true)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
@@ -297,7 +308,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println("Node queue length : ", length(node_queue))
         
         # pick and remove node from node_queue
-        node = splice!(node_queue,argmin(n.data.lb for n in node_queue))
+        node = select_leaf(node_queue, best_ub)
 
         println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
         if best_ub - node.data.lb <= ϵ
