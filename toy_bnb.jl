@@ -233,7 +233,32 @@ function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,
     end
     return best_ub, best_feasible_solution, fea_iter
 end
+#select a leaf from leaves for computing
+function select_leaf(node_queue::Vector{BnbNode}, best_ub)
+    #depth first until find the first feasible solution
+    if best_ub == Inf
+        depth_set = []
+        for node in node_queue
+            push!(depth_set, node.data.depth)
+        end
+        depth = maximum(depth_set)
+        max_set = findall(x -> x == depth, depth_set)
 
+        index = 1
+        #Find the one with the lowest bound
+        lower_bound = Inf
+        for i = 1:lastindex(max_set)
+            if node_queue[max_set[i]].data.lb < lower_bound
+                index = i
+            end
+        end 
+
+        return splice!(node_queue, max_set[index])    #delete and return the selected leaf
+    #best bound when we have a feasible solution
+    else
+        return splice!(node_queue,argmin(n.data.lb for n in node_queue))    #delete and return the selected leaf
+    end
+end
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
@@ -271,7 +296,8 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         println(" ")
         println("Node queue length : ", length(node_queue))
         # pick and remove node from node_queue
-        node = splice!(node_queue,argmin(n.data.lb for n in node_queue))
+        node = select_leaf(node_queue, best_ub)
+        #node = splice!(node_queue,argmin(n.data.lb for n in node_queue))
 
         println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
         if best_ub - node.data.lb <= ϵ

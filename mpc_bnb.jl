@@ -125,7 +125,7 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, total_iter::Int,early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, total_iter::Int,early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false,dom_prog_enable::Bool=false)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
@@ -134,16 +134,17 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
     end
     
     b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec, debug_print)
-    domain_prop = domain_propagation_mpc!(A,b,n,integer_vars)
-    if isinf(domain_prop)
-        println("Infeasible relaxed problem")
-        return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
+    if dom_prog_enable
+        domain_prop = domain_propagation_mpc!(A,b,n,integer_vars)
+        if isinf(domain_prop)
+            println("Infeasible relaxed problem")
+            return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
+        end 
     end
     #= println("cones : ", solver.cones.cone_specs)
     println(" Solver.variables.x : ", solver.variables.x)
     println(" Solver.variables.z : ", solver.variables.z)
     println(" Solver.variables.s : ", solver.variables.s)  =#
-    println("domain_prop debug solver.data.b is b: ", solver.data.b==b)
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, λ, prev_x, prev_z, prev_s,debug_print)
@@ -254,7 +255,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
     if best_ub == Inf
         depth_set = []
         for node in node_queue
-            push!(depth_set, node.depth)
+            push!(depth_set, node.data.depth)
         end
         depth = maximum(depth_set)
         max_set = findall(x -> x == depth, depth_set)
@@ -263,7 +264,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
         #Find the one with the lowest bound
         lower_bound = Inf
         for i = 1:lastindex(max_set)
-            if node_queue[max_set[i]].lb < lower_bound
+            if node_queue[max_set[i]].data.lb < lower_bound
                 index = i
             end
         end 
@@ -275,7 +276,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
     end
 end
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0, debug_print::Bool = true)
+function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0, debug_print::Bool = true, dom_prog_enable::Bool=false)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -310,6 +311,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # pick and remove node from node_queue
         node = select_leaf(node_queue, best_ub)
 
+
         println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
         if best_ub - node.data.lb <= ϵ
             break
@@ -340,7 +342,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable,warm_start, λ, x, node.data.solution_z, node.data.solution_s, debug_print) 
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable,warm_start, λ, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
@@ -365,7 +367,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start,λ, x, node.data.solution_z, node.data.solution_s, debug_print)
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start,λ, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable)
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right,z_right,s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))

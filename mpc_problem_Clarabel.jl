@@ -84,7 +84,7 @@ for i = start_horizon:end_horizon
 #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, true, λ,false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,true,false) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -109,7 +109,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,false) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,true,false) 
     println("Found objective without early_term: ", best_ub_without)
     println("Number of early terminated nodes (without): ", early_num_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
@@ -127,4 +127,4 @@ for i = start_horizon:end_horizon
     
 end 
    
-save("mimpc_iterations_N=8_warmstart_select_leaf.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("mimpc_iterations_N=8_no_warmstart_no_domprog_selectleaf.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
