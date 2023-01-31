@@ -3,7 +3,7 @@ using JLD
 using PyPlot
 using Printf
 
-k_list = [-1,5]
+k_list = [-1,5,10]
 
 ind = 3:20
 
@@ -20,7 +20,10 @@ handles = Vector()
 for i in 1:lastindex(k_list)
     with_iter = load(@sprintf("my_toy_k=%d_warmstart.jld",k_list[i]),"with_iter")
     without_iter= load(@sprintf("my_toy_k=%d_warmstart.jld",k_list[i]),"without_iter")
-    first_iter_num = load(@sprintf("my_toy_k=%d_warmstart.jld",k_list[i]),"first_iter_num")
+    first_iter_num = load(@sprintf("my_toy_k=%d_warmstart.jld",k_list[i]),"first_iter_num") 
+    #= with_iter = load(@sprintf("my_toy_k=%d.jld",k_list[i]),"with_iter")
+    without_iter= load(@sprintf("my_toy_k=%d.jld",k_list[i]),"without_iter")
+    first_iter_num = load(@sprintf("my_toy_k=%d.jld",k_list[i]),"first_iter_num")=#
     percentage = (with_iter .- first_iter_num) ./(without_iter .- first_iter_num)
     total_percentage = sum(with_iter .- first_iter_num) / sum(without_iter .- first_iter_num)
     for j = 1:lastindex(percentage)
@@ -40,9 +43,7 @@ for i in 1:lastindex(k_list)
     xlim([3,20])
     push!(handles,p2)
     subplot(212)
-    if i == 1
-        PyPlot.step(ind, ones(end_idx - start_idx + 1), color= "black", marker = "o", markersize = 4)
-    end
+    
     PyPlot.step(ind, percentage, color= color_set[i], marker = marker_set[i], markersize = 4)
     ylabel("Ratio")
     xlabel("Number of integer variables")
@@ -50,7 +51,7 @@ for i in 1:lastindex(k_list)
 end
 PyPlot.legend(handles=handles)
 
-savefig("toy_problem_k=5_and_-1_logscale_warmstart.pdf")
+savefig("toy_problem_3k_logscale_warmstart.pdf")
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
 
 # fn = plot(ind .- start_idx, [without_iter5 .- first_iter_num5, with_iter5 .- first_iter_num5], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)

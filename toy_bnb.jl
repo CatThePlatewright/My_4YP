@@ -13,7 +13,7 @@ function getClarabelData(model::Model)
     b = data.b
     s = solver.cones.cone_specs
     return P,q,A,b,s
-end
+end 
 function getAugmentedData(A::SparseMatrixCSC,b::Vector,cones::Vector,integer_vars::Vector,n::Int)
     m = length(integer_vars)
     A2 = sparse(collect(1:m),[i for i in integer_vars] ,-1* ones(m),m,n) #corresponding to lower bound constraints -x+s= -b
@@ -37,51 +37,25 @@ A and b are the augmented data.A and data.b :
  we tighten 1000 to k for all variables"""
 function simple_domain_propagation!(b,k)
     if k < 0
-        replace!(b,1000=>1) #TODO
+        replace!(b,1000=>1) # since if sum is -1 we won’t want any variable to be greater than 0 actually
     else
         replace!(b,1000=>k)
     end
 end
 
-"""This function does not use the upper or lower bounds vector for each node. Works only for natural not negative integer variables"""
-function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values)    
-    if isnothing(fixed_x_indices) 
-        return b
-    end
-    m = length(integer_vars)
-    # match the indices to the indices in augmented vector b (which only augmented for integer_vars)
-    # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
-    indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
-    for (i,j) in zip(indices_in_b, fix_values)
-        if j >= 0
-            println("set upper bound for index: ", i," to ", j)
-            # this is for x[i] <= value which are in the last m:end elements of augmented b
-            b[end-m+i] = j
-        else
-            println("set lower bound for index: ", i," to ", -j)
-            # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-            b[end-2*m+i] = j 
-        end
-    end
-    return b
-
-end
-function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)    
+function add_branching_constraint(b::Vector, n::Int, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
-        m = length(integer_vars)
-        # match the indices to the indices in augmented vector b (which only augmented for integer_vars)
-        # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
-        indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
-        for (i,j,k) in zip(indices_in_b, fix_values, upper_or_lower_vec)
+        # reminder: b is 1+2*n long where n is the TOTAL number of variables 
+        for (i,j,k) in zip(integer_vars, fix_values, upper_or_lower_vec)
             if k == 1
                 println("set upper bound for index: ", i," to ", j)
                 # this is for x[i] <= value which are in the last m:end elements of augmented b
-                b[end-m+i] = j
+                b[end-n+i] = j
 
             elseif k == -1
                 println("set lower bound for index: ", i," to ", -j)
                 # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-                b[end-2*m+i] = j 
+                b[end-2*n+i] = j 
             end
         end
             
@@ -89,24 +63,22 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
     end
     return b
 end
-function reset_b_vector(b::Vector,integer_vars::Vector)
-    m = length(integer_vars)
-    b[end-2*m+1:end-m]=ones(m)
-    b[end-m+1:end] = infinity*ones(m)
+function reset_b_vector(b::Vector,n::Int)
+    b[end-2*n+1:end-n]=ones(n) # means they are greater than -1
+    b[end-n+1:end] = infinity*ones(n)
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
 function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing)
-    A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
-        reset_b_vector(b,integer_vars) 
+        reset_b_vector(b,n) 
     end
     simple_domain_propagation!(b,-b[1])
-    b = add_branching_constraint(b,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
+    b = add_branching_constraint(b,n,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
     
 
     #= println("cones : ", solver.cones.cone_specs)
@@ -198,7 +170,7 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
     P = solver.data.P #this is only the upper triangular part
     q = solver.data.q
     for i in integer_vars
-        x[i] = round(relaxed_vars[i]) 
+        x[i] = round(relaxed_vars[i],digits=0) 
     end
     println("rounded variables: ", x)
 
@@ -266,16 +238,12 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     early_num = 0
     best_feasible_solution = zeros(n)
     node_queue = Vector{BnbNode}()
-    max_nb_nodes = 200
+    max_nb_nodes = 500
     total_iter = 0
     fea_iter = 0
 
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
-        println("Solution x of unbounded base model: ", base_solution.x)
-        println("Solution z of unbounded base model: ", base_solution.z)
-        println("Solution s of unbounded base model: ", base_solution.s)
-
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         # this is our root node of the binarytree

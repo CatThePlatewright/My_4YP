@@ -11,10 +11,8 @@ by default, branch_and_bound_solve_jump() has this list of binary variables as t
 " only constrains the variables that are either binary or integer/natural to their interval
 for relaxation, e.g. if binary: [0,1], if natural: [0,+Inf]
     the rest of the variables are completely free"
-function add_constraints_jump(model::Model, lb, ub, integer_vars)
+function add_constraints_jump(model::Model, lb, ub)
     x = model[:x]
-    x = [x[i] for i in integer_vars]
-    println("Adding constraints for vars: ", x)
     @constraint(model, lb, x.>= lb)
     if isnothing(ub)
         @constraint(model, ub, x.<= infinity)
@@ -56,6 +54,7 @@ function build_unbounded_base_model(optimizer, n::Int,k::Int,Q::Matrix,c::Vector
     x = @variable(model, x[1:n])
     @objective(model, Min, x'*Q*x + c'*x)
     @constraint(model, sum_constraint, sum(x) == k)
+    add_constraints_jump(model, -1*ones(n), nothing) 
     return model
 end
 
@@ -151,9 +150,8 @@ function termination_status_bnb(ub, lb,ϵ)
     return "UNDEFINED" 
 end
 
-function solve_base_model(base_model::Model,integer_vars=collect(1:n))
+function solve_base_model(base_model::Model)
     # natural variables relaxed to non-negative vars
-    add_constraints_jump(base_model, -1*ones(length(integer_vars)), nothing, integer_vars) 
     optimize!(base_model)
     print("Solve_base_model in JuMP: ",solution_summary(base_model))
     println("JuMP solution relaxed: ",  objective_value(base_model) , " using ", value.(base_model[:x]))
