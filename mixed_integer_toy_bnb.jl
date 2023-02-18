@@ -3,13 +3,89 @@ include("mixed_binary_solver.jl")
 #import toy_bnb.jl: solve_in_Clarabel, evaluate_constraint, check_lb_pruning, update_ub, select_leaf
 include("toy_bnb.jl")
 function simple_domain_propagation!(b,k)
-    if k < 0
-        replace!(b,1000=>1) # since if sum is -1 we won’t want any variable to be greater than 0 actually
-    else
-        replace!(b,1000=>k)
-    end
+    replace!(b,1000=>k)
+    
 end
+function domain_propagation_mpc!(Ã,b,n,i_idx)
+    m = Int(3*n / 2) # find how long the original vector u is since we concatenated u into b in getClarabelData()
+    A= Ã[1:m,:]
+    u = b[1:m]
+    l = vcat(-infinity*ones(n), -b[m+1:end-2*n] ) #concatenate n times -inf's (paddings) with true lower bounds l (only 6-element long for N=2) -> gives length of m
+    lb = -b[end-2*n+1:end-n] 
+    ub = b[end-n+1:end]
 
+    flag = true #check whether domain propagation is effective
+
+    while flag
+        pre_lb = deepcopy(lb)
+        pre_ub = deepcopy(ub)
+
+        for row = 1:m
+            #find nonzero items in each constraint
+            column, value = findnz(A[row,:])
+
+            for i = 1:lastindex(column)
+                upper = u[row] # this is u_b in paper
+                lower = l[row]
+                for j = 1:lastindex(column)
+                    #except the index i
+                    if i == j
+                        continue
+                    end
+                    #check the sign of coefficient, e.g. -1*xi <= -l for xi>= l
+                    if value[j] > 0 
+                        upper -= value[j]*lb[column[j]]
+                        if lower != -infinity  # no need to update lower bounds when it is -Inf since it is a padding only
+                            lower -= value[j]*ub[column[j]]
+                        end
+                    else
+                        upper -= value[j]*ub[column[j]]
+                        if lower != infinity
+                            lower -= value[j]*lb[column[j]]
+                        end
+                    end
+                end
+
+                #update bound
+                if value[i] > 0
+                    ub[column[i]] = min(ub[column[i]], upper/value[i])
+                    lb[column[i]] = max(lb[column[i]], lower/value[i])
+                else
+                    ub[column[i]] = min(ub[column[i]], lower/value[i])
+                    lb[column[i]] = max(lb[column[i]], upper/value[i])
+                end
+                #tighten bound for integer variables
+                @. ub[i_idx] = floor(ub[i_idx])
+                @. lb[i_idx] = ceil(lb[i_idx])
+            end
+            
+
+        end
+        if ub != pre_ub 
+            println("domain_propagation_mpc: updated upper bounds", ub)
+        end
+        if lb != pre_lb
+            println("domain_propagation_mpc: updated lower bounds", lb)
+        end
+
+        #domain propogation ends (convergence)
+        if (lb == pre_lb) && (ub == pre_ub)
+            println("domain_propagation_mpc: convergence")
+            flag = false
+        end
+        
+    end
+
+    #detect infeasibility, return immediately
+    if (lb .<= ub)!=ones(length(lb))
+        println("Detect primal infeasibility in domain propagation")
+        println(ub)
+        println(lb)
+        return Inf
+    end
+    b .= vcat(u, -l[n+1:end], -lb, ub)
+    return 1
+end
 function add_branching_constraint_new(b::Vector, n::Int, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)   
     
     println("Fixed x index: ",fixed_x_indices)
@@ -19,7 +95,6 @@ function add_branching_constraint_new(b::Vector, n::Int, integer_vars, fixed_x_i
             if k == 1
                 println("set upper bound for index: ", i," to ", j)
                 # this is for x[i] <= value which are in the last m:end elements of augmented b
-                println("at index in b: ", lastindex(b)-n+i)
                 b[end-n+i] = j
 
             elseif k == -1
@@ -29,15 +104,13 @@ function add_branching_constraint_new(b::Vector, n::Int, integer_vars, fixed_x_i
             end
         end
             
-        
+        println("Updated b: ",b)
     end
     return b
 end
 function reset_b_vector(b::Vector,n::Int)
     n_x = Int(n/2) # number of x variables is half the total nb of vars
-    b[end-4*n_x+1:end-3*n_x]=-10*ones(n_x) # means they are greater than -1
-    b[end-3*n_x+1:end-2*n_x] = zeros(n_x)
-    b[end-2*n_x+1:end-n_x] = 10*ones(n_x)
+    b[2:end-n_x] = zeros(3*n_x)
     b[end-n_x+1:end] = ones(n_x)
 end
 
@@ -76,33 +149,6 @@ function compute_lb_new(solver, n::Int, fixed_x_indices, fix_x_values,integer_va
     end
 end
 
-" returns the upper bound computed when given the model as well as the rounded variable solution.
-For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
-fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
-and all variables take on the rounded values."
-function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
-    # set the relaxed_vars / lb result equal to the rounded binary values
-    # if these are in the set of binary variables   
-    if isinf(relaxed_vars[1])
-        return Inf, [Inf for _ in 1:n]
-    end
-    x = deepcopy(relaxed_vars) # TOASK
-    P = solver.data.P #this is only the upper triangular part
-    q = solver.data.q
-    for i in integer_vars
-        x[i] = round(relaxed_vars[i],digits=0) 
-    end
-    println("rounded variables: ", x)
-
-    if evaluate_constraint(solver,x)
-        obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
-        println("Valid upper bound : ", obj_val," using feasible x: ", x)
-        return obj_val, x
-    else 
-        println("Infeasible or unbounded problem for ub computation")
-        return Inf, [Inf for _ in 1:n]
-    end
-end
 
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,η=1000.0)
@@ -154,8 +200,8 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # heuristic guessing for fractional solution: which edge to split along i.e. which variable to fix next? 
         fixed_x_index = pick_index(x, integer_vars, node.data.fixed_x_ind,false) 
         println("GOT BRANCHING VARIABLE: ", fixed_x_index)
-        ceil_value = 0.0
-        floor_value = 1.0
+        ceil_value = 1.0
+        floor_value = 0.0
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always fixes the next variable to closest lower integer
         fixed_x_left = vcat(node.data.fixed_x_values, floor_value) 

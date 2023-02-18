@@ -10,19 +10,16 @@ function getData(n,sum_of_bin_vars)
     Q = Matrix{Float64}(I, n, n) 
     Random.seed!(1234)
     c = rand(Float64,n)*2 .-1
+    m = 2*n #total number of variables, n continuous x's, n binary vars
+    binary_vars = collect(n+1:m) # indices of binary variables
     
     # check against Gurobi's mixed-integer solution
     exact_model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(exact_model, "OutputFlag", 0)
-
-    m = 2*n #total number of variables, n continuous x's, n binary vars
     z = @variable(exact_model, x[i = 1:m])
     x = z[1:n]
-    binary_vars = collect(n+1:m) # indices of binary variables
     y= z[n+1:m]
     set_binary.(y)
-    set_lower_bound.(x,-10)
-    set_upper_bound.(x,10)
 
     @objective(exact_model, Min, x'*Q*x + c'*x)
     @constraint(exact_model, sum_constraint, sum(y) == sum_of_bin_vars)
@@ -40,12 +37,9 @@ function getData(n,sum_of_bin_vars)
     y= z[n+1:m]
     @objective(model, Min, x'*Q*x + c'*x)
     @constraint(model, sum_constraint, sum(y) == sum_of_bin_vars)
-    @constraint(model, x.<=10*y)
-    @constraint(model, -10*y .<= x)
-    
-    @constraint(model, lbx, x.>= -10*ones(n)) #try .<= instead 
-    @constraint(model, lby, y.>= zeros(n))
-    @constraint(model, ubx, x.<= 10*ones(n))
+    @constraint(model,lbx, -10*y .<= x)
+    @constraint(model, lby, -y.<= -zeros(n)) # using >= will swap the order in A and b s.t. lby comes before lbx!
+    @constraint(model,ubx, x.<=10*y)
     @constraint(model, uby, y.<= ones(n))
 
     solve_base_model(model)    #solve in Clarabel the relaxed problem
@@ -62,7 +56,7 @@ function getData(n,sum_of_bin_vars)
 end
 
 n_range =2:2
-k= 2
+k= 1
 λ = 0.99
 η = 100.0
 ϵ = 1e-6

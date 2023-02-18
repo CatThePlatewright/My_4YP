@@ -35,8 +35,8 @@ function getData(n,m,k)
     
 end
 
-n_range =1:20
-k=3
+n_range =2:20
+k=10
 λ = 0.99
 η = 100.0
 ϵ = 1e-6
@@ -64,7 +64,7 @@ for n in n_range
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
  
-    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,true,true,false,λ,η) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,true,true,true,λ,η) 
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
     diff_sol_vector= feasible_solution - value.(exact_model[:x])
@@ -85,7 +85,7 @@ for n in n_range
     Clarabel.setup!(solver_without, P, q, A, b,s, settings)
 
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_nodes_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, integer_vars, true, false, false,λ) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_nodes_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, integer_vars, true, false, true,λ) 
     println("Found objective without early_term: ", best_ub_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
 
@@ -105,4 +105,4 @@ end
 
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
-save("my_toy_k=3.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+save("my_toy_k=10_warmstart.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
