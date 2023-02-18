@@ -45,8 +45,19 @@ end
 
 function add_branching_constraint(b::Vector, n::Int, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
-        # reminder: b is 1+2*n long where n is the TOTAL number of variables 
-        for (i,j,k) in zip(integer_vars, fix_values, upper_or_lower_vec)
+        #reminder: b is 1+2*n long where n is the TOTAL number of variables
+
+        #= match the indices to the indices in augmented vector b (which only augmented for integer_vars)
+        # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
+        m = length(integer_vars)
+        indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
+        for (i,j,k) in zip(indices_in_b, fix_values, upper_or_lower_vec)=#  
+        
+        # below code for fully integer problems!
+        if length(integer_vars)!=n
+            error("Fully integer problem expected for toy problem, check m against n!")
+        end
+        for (i,j,k) in zip(fixed_x_indices, fix_values, upper_or_lower_vec)
             if k == 1
                 println("set upper bound for index: ", i," to ", j)
                 # this is for x[i] <= value which are in the last m:end elements of augmented b
