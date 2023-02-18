@@ -2,10 +2,9 @@
 using JLD
 using PyPlot
 
-with_iter = load("mimpc_iterations_N=8_no_warmstart_no_domprog_selectleaf.jld","with_iter")
-without_iter = load("mimpc_iterations_N=8_no_warmstart_no_domprog_selectleaf.jld", "without_iter")
-first_iter_num = load("mimpc_iterations_N=8_no_warmstart_no_domprog_selectleaf.jld", "first_iter_num")
-with_iter2 = load("mimpc_iterations_N=8_no_warmstart_no_domprog.jld","with_iter")
+with_iter = load("mimpc_iterations_N=8_eta=point01.jld","with_iter")
+without_iter = load("mimpc_iterations_N=8_eta=point01.jld", "without_iter")
+first_iter_num = load("mimpc_iterations_N=8_eta=point01.jld", "first_iter_num")
 
 start_idx = 1
 end_idx = 100
@@ -39,7 +38,7 @@ PyPlot.step(ind .- start_idx, percentage, color= "red", marker = "x", markersize
 ylabel("Ratio")
 xlabel("Intervals")
 xlim([0,100])
-savefig("mpc_comparison_N=8_no_warmstart_no_domprog.pdf")
+savefig("mpc_comparison_N=8_eta=0.01.pdf")
 
 # fn = plot(ind .- start_idx, [without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx]], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)
 # fn_per = plot(ind .- start_idx, [ones(end_idx - start_idx + 1), percentage], ylabel = "Ratio", marker = [:c :d], markersize = 2, label = "", seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)
