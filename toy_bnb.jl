@@ -153,8 +153,8 @@ function evaluate_constraint(solver,x)
             
             elseif t == Clarabel.NonnegativeConeT
                 println("Evaluating ", residual[k], ">= 0 ?")
-
-                if minimum(residual[k])< 0
+                min = minimum(residual[k])
+                if ~(isapprox(min,0,atol=1e-4)) && min< 0 
                     return false
                     
                 end

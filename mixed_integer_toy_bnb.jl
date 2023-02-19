@@ -149,7 +149,6 @@ function compute_lb_new(solver, n::Int, fixed_x_indices, fix_x_values,integer_va
     end
 end
 
-
 """ base_solution is the first solution to the relaxed problem"""
 function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,η=1000.0)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)

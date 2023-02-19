@@ -55,8 +55,8 @@ function getData(n,sum_of_bin_vars)
     
 end
 
-n_range =2:2
-k= 1
+n_range =4:4
+k= 3
 λ = 0.99
 η = 100.0
 ϵ = 1e-6
@@ -81,7 +81,7 @@ for n in n_range
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
  
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,false,false,false,λ,η) #want total number of vars: 2*n
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ,η) #want total number of vars: 2*n
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
     diff_sol_vector= feasible_solution - value.(exact_model[:x])
@@ -102,7 +102,7 @@ for n in n_range
     Clarabel.setup!(solver_without, P, q, A, b,s, settings)
 
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, binary_vars, false, false, false,λ) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,2*n,ϵ, binary_vars, true, false, false,λ) 
     println("Found objective without early_term: ", best_ub_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
 
