@@ -10,19 +10,9 @@ function create_variables(model,n,L)
 end
 function add_constraints(model,n,L,Σ,smin)
     w = zeros(n) #initialise as 0 
-
-    #lower bounds on variables
-    @constraint(model,lxplus,-model[:xplus] .<=zeros(n))
-    @constraint(model,lxminus,-model[:xminus] .<=zeros(n))
-    @constraint(model,lzeta,-model[:ζ] .<=zeros(L))
-    # upper bounds on variables
-    @constraint(model,uxplus,model[:xplus] .<=ones(n))
-    @constraint(model,uxminus,model[:xminus] .<=ones(n))
-    @constraint(model,uzeta,model[:ζ] .<=ones(L))
-
-    # smin is a threshold level: our total portfolio allocation in assets from sector k will be at least smin if ζ for that sector=1 (selected). This is to ensure we do not fall short.
-    @constraint(model, cost_constraint, [ρ; (Σ^0.5)*(xplus+xminus)] in SecondOrderCone()) 
+    @constraint(model, cost_constraint, [model[:ρ]; (Σ^0.5)*(model[:xplus]+model[:xminus])] in SecondOrderCone()) 
     @constraint(model, sum_constraint, sum(w+model[:xplus]-model[:xminus]) == 1.0)
+    # smin is a threshold level: our total portfolio allocation in assets from sector k will be at least smin if ζ for that sector=1 (selected). This is to ensure we do not fall short.
     #=for z in ζ
         # some index set corresponding to z
         assets = 0
@@ -34,6 +24,14 @@ function add_constraints(model,n,L,Σ,smin)
     end =#
     #Lmin = 1
     #@constraint(model, minimum_sectors, sum(ζ) >= Lmin)
+    #lower bounds on variables
+    @constraint(model,lxplus,-model[:xplus] .<=zeros(n))
+    @constraint(model,lxminus,-model[:xminus] .<=zeros(n))
+    @constraint(model,lzeta,-model[:ζ] .<=zeros(L))
+    # upper bounds on variables
+    @constraint(model,uxplus,model[:xplus] .<=ones(n))
+    @constraint(model,uxminus,model[:xminus] .<=ones(n))
+    @constraint(model,uzeta,model[:ζ] .<=ones(L))
     
 end
 function calc_variance(n)
@@ -88,7 +86,7 @@ function getData()
     println("b : ", b)
     println("cones : ", cones) 
     println("integer vars: ", binary_vars)
-    return P,q,A,b,cones, binary_vars, exact_model
+    return P,q,A,b,cones, binary_vars
     
 end
 

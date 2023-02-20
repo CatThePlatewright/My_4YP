@@ -55,17 +55,19 @@ function getData(n,sum_of_bin_vars)
     
 end
 
-n_range =4:4
-k= 3
+n_range =2:12
 λ = 0.99
-η = 100.0
+η = 1000.0
 ϵ = 1e-6
 without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
+total_nodes_num = Int64[]
+total_nodes_without_num = Int64[]
 percentage_iter_reduction = Float64[]
 
 for n in n_range
+    k= Int(floor(n/4))
     P,q,A,b, s, binary_vars, exact_model= getData(n,k)
     simple_domain_propagation!(b,k)
     println("Domain propagated b: ", b)
@@ -81,7 +83,7 @@ for n in n_range
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
  
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ,η) #want total number of vars: 2*n
+    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ,η) #want total number of vars: 2*n
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
     diff_sol_vector= feasible_solution - value.(exact_model[:x])
@@ -102,7 +104,7 @@ for n in n_range
     Clarabel.setup!(solver_without, P, q, A, b,s, settings)
 
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,2*n,ϵ, binary_vars, true, false, false,λ) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_nodes_without = branch_and_bound_solve(solver_without, base_solution_without,2*n,ϵ, binary_vars, true, false, false,λ) 
     println("Found objective without early_term: ", best_ub_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
 
@@ -112,6 +114,8 @@ for n in n_range
     append!(without_iter_num, total_iter_without)
     append!(with_iter_num, total_iter)
     append!(percentage_iter_reduction, reduction)
+    append!(total_nodes_num, total_nodes)
+    append!(total_nodes_without_num, total_nodes_without)
     if (fea_iter == fea_iter_without)
         append!(first_iter_num, fea_iter)
     end  
@@ -119,4 +123,4 @@ end
 
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
-#save("my_toy_k=10_warmstart.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("MIQP_toy_k=0.25.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
