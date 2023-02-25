@@ -1,29 +1,18 @@
 include("toy_bnb.jl")
-using JLD, CSV
+using JLD, CSV, Statistics
 
 function create_variables(model,n,L)
     @variable(model,xplus[i = 1:n])
     @variable(model,xminus[i = 1:n])
+    @variable(model,β[i = 1:n])
     @variable(model,ζ[i=1:L])
-    @variable(model,ρ)
-    #return x, xplus, xminus, ζ, ρ
+
 end
 function add_constraints(model,n,L,Σ,smin)
-    w = zeros(n) #initialise as 0 
     @constraint(model, cost_constraint, [model[:ρ]; (Σ^0.5)*(model[:xplus]+model[:xminus])] in SecondOrderCone()) 
-    @constraint(model, sum_constraint, sum(w+model[:xplus]-model[:xminus]) == 1.0)
-    # smin is a threshold level: our total portfolio allocation in assets from sector k will be at least smin if ζ for that sector=1 (selected). This is to ensure we do not fall short.
-    #=for z in ζ
-        # some index set corresponding to z
-        assets = 0
-        for i in S
-            assets += w[i]+ xplus[i]-xminus[i]
-        end
-        @constraint(model, sufficient_amount_con1, smin*z <= assets)
-        @constraint(model, sufficient_amount_con2, smin+(1-smin)*ζ >= assets)
-    end =#
-    #Lmin = 1
-    #@constraint(model, minimum_sectors, sum(ζ) >= Lmin)
+    @constraint(model, sum_constraint, sum(model[:xplus]-model[:xminus]) == 1.0)
+    Lmin = 1
+    @constraint(model, minimum_sectors, sum(ζ) >= Lmin)
     #lower bounds on variables
     @constraint(model,lxplus,-model[:xplus] .<=zeros(n))
     @constraint(model,lxminus,-model[:xminus] .<=zeros(n))
@@ -34,9 +23,7 @@ function add_constraints(model,n,L,Σ,smin)
     @constraint(model,uzeta,model[:ζ] .<=ones(L))
     
 end
-function calc_variance(n)
-    return Matrix(1.0I,n,n)
-end
+
 
 function get_return_data(n::Int)
     returns = CSV.File("portfolio_returns.csv")
@@ -99,10 +86,8 @@ total_num = 2*n+L+1
 Random.seed!(1234)
 # γ = rand(Float64,n) 
 γ = get_return_data(n)# return rates
-Λ = calc_variance(n)
-q = vcat(-γ,γ,zeros(L),0)
-P = sparse([total_num],[total_num],[1.0],total_num,total_num)
-smin = 0.1
+Λ = cov(γ)
+smin = 0.01
 binary_vars = collect(2*n+1:2*n+L) # indices of binary variables
 without_iter_num = Int64[]
 with_iter_num = Int64[]
