@@ -4,48 +4,74 @@ using JLD, CSV, Statistics
 function create_variables(model,n,L)
     @variable(model,xplus[i = 1:n])
     @variable(model,xminus[i = 1:n])
-    @variable(model,β[i = 1:n])
-    @variable(model,ζ[i=1:L])
+    @variable(model,bin[i = 1:n])
+    @variable(model,l[i=1:L])
 
 end
-function add_constraints(model,n,L,Σ,smin)
-    @constraint(model, cost_constraint, [model[:ρ]; (Σ^0.5)*(model[:xplus]+model[:xminus])] in SecondOrderCone()) 
-    @constraint(model, sum_constraint, sum(model[:xplus]-model[:xminus]) == 1.0)
-    Lmin = 1
-    @constraint(model, minimum_sectors, sum(ζ) >= Lmin)
-    #lower bounds on variables
+function add_constraints(model,n,L, M,K,Lmin, Lmax)
+    @constraint(model, cost_constraint, [1+ρ; [(Λ^0.5)*(model[:xplus]+model[:xminus]); ρ-1]] in SecondOrderCone()) 
+    # sum constraints
+    @constraint(model, sum_investments, sum(model[:xplus]-model[:xminus]) == M)
+    @constraint(model, sum_number_investments, sum(model[:bin]) <= K)
+    @constraint(model, sum_sectors_lb, -sum(model[:l]) <= -Lmin)
+    @constraint(model, sum_sectors_lb, sum(model[:l]) <= Lmax)
+    # sector-asset pair constraints
+    @constraint(model, model[:bin] <= H*model[:l])# if you invest into ith asset, the corresponding sector must be chosen, took
+    @constraint(model,model[:l] <= H'*model[:bin])# if you choose jth sector, there must be investment into the corresponding assets
+    # lower bounds on individual variables
     @constraint(model,lxplus,-model[:xplus] .<=zeros(n))
     @constraint(model,lxminus,-model[:xminus] .<=zeros(n))
-    @constraint(model,lzeta,-model[:ζ] .<=zeros(L))
-    # upper bounds on variables
-    @constraint(model,uxplus,model[:xplus] .<=ones(n))
-    @constraint(model,uxminus,model[:xminus] .<=ones(n))
-    @constraint(model,uzeta,model[:ζ] .<=ones(L))
+    @constraint(model,lbin,-model[:bin] .<=zeros(n))
+    @constraint(model,ll,-model[:l] .<=zeros(L))
+    # upper bounds on individual variables
+    @constraint(model,uxplus,model[:xplus] .<= M*ones(n)*model[:bin])
+    @constraint(model,uxminus,model[:xminus] .<= M*ones(n)*model[:bin])
+    @constraint(model,ubin,model[:bin] .<=ones(n))
+    @constraint(model,ul,model[:l] .<=ones(L))
     
 end
 
+"""returns the nxn covariance matrix between the returns of n assets,
+stored in R, a matrix of size Txn where T is the number of days in the data (2516)"""
+function calc_variance(n::Int, R::Matrix) 
+    Λ = zeros(n,n)
+    for i = 1:n
+        for j = 1:n
+            Λ[i,j] = cov(R[:,i], R[:,j]) # average over the time frame day 0 to day 2516
+        end
+    end
+    return Λ
+end
 
 function get_return_data(n::Int)
     returns = CSV.File("portfolio_returns.csv")
-    row1 = returns[1] # just get first row of returns at time t=0
-    r̃ = zeros(n)
-    companies = propertynames(row1)
-    for col in 1:lastindex(companies)-1
-        if col <= n
-            r̃[col]= getproperty(row1,companies[col+1])
+    returns = returns[1:5] # just get first row of returns at time t=0
+    R = zeros(5,n)
+    companies = propertynames(returns[1])
+    for row in 1:lastindex(returns)
+        for col in 1:lastindex(companies)-1
+            if col <= n
+                R[row,col]= getproperty(returns[row],companies[col+1])
+            end
         end
     end
-    return r̃
+    return R
 end
-
+function get_sector_asset_matrix()
+    asset2sector = [1,1,1,3,2,3,2,1,3,3,2,2,3,2,3,2,1,2,1,1]
+    H = sparse(collect(1:n),asset2sector[1:n],ones(n))
+    return H
+end
 function solveGurobi()
     # check against Gurobi's mixed-integer solution
     exact_model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(exact_model, "OutputFlag", 0)
     create_variables(exact_model,n,L) 
-    set_binary.(exact_model[:ζ])
-    @objective(exact_model, Min, 0.5*exact_model[:ρ]^2 + γ'*(exact_model[:xplus]-exact_model[:xminus]))
-    add_constraints(exact_model,n,L,Λ,smin)
+    set_binary.(exact_model[:bin])
+    set_binary.(exact_model[:l])
+    r = (1/T)*ones(1,T)*R
+    @objective(exact_model, Min, -r*(exact_model[:xplus]-exact_model[:xminus]))
+    add_constraints(exact_model,n,L,M,K,Lmin,Lmax)
     println(exact_model)
 
     optimize!(exact_model)
@@ -61,8 +87,8 @@ function getData()
     model = Model()
     setOptimizer(model, optimizer)
     create_variables(model,n,L)
-    @objective(model, Min, 0.5*model[:ρ]^2 + γ'*(model[:xplus]-model[:xminus]))
-    add_constraints(model,n,L,Λ,smin)
+    @objective(model, Max, (1/T)*ones(1,T)*R*(model[:xplus]-model[:xminus])) # maximise average return (constant 1/T not included here)
+    add_constraints(model,n,L, M,K,Lmin, Lmax)
     optimize!(model)
     print("Solve_base_model in JuMP: ",solution_summary(model))
     println("JuMP solution relaxed: ",  objective_value(model) , " using ", value.(model[:xplus]), value.(model[:xminus]), value.(model[:ζ]), value.(model[:ρ]))
@@ -77,25 +103,29 @@ function getData()
     
 end
 
-n = 2 # 20 is max. number of assets
-L = 1 # about 6?
+n = 4 # 20 is max. number of assets
+L = 3 
+M = 1.0 # total investement (money)
+K = n/2 # maximum number of investments (sum of bin vars)
+Lmin = 1
+Lmax = L
 λ = 0.99
 η = 100.0
 ϵ = 1e-6
 total_num = 2*n+L+1
-Random.seed!(1234)
-# γ = rand(Float64,n) 
-γ = get_return_data(n)# return rates
-Λ = cov(γ)
-smin = 0.01
-binary_vars = collect(2*n+1:2*n+L) # indices of binary variables
+R = get_return_data(n)# return rates
+T = size(R)[1]
+Λ = calc_variance(n, R)
+ρ = 0.9 # SOC constraint for risk return
+H = get_sector_asset_matrix()
+binary_vars = collect(2*n+1:3*n+L) # indices of binary variables
 without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
 
-P,q,A,b, s, binary_vars= getData()
 exact_model, exact_solution = solveGurobi()
+P,q,A,b, s, binary_vars= getData()
 println("Setting up Clarabel solver...")
 settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
 solver   = Clarabel.Solver()
@@ -108,7 +138,7 @@ println(result)
 #start bnb loop
 println("STARTING CLARABEL BNB LOOP ")
 
-best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,n,ϵ, binary_vars,true,true,true,λ,η) 
+best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,n,ϵ, binary_vars,true,false,false,λ,η) 
 println("Termination status of Clarabel solver:" , solver.info.status)
 println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
 diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
