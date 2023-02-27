@@ -1,5 +1,5 @@
 include("portfolio_bnb.jl")
-using JLD, CSV, Statistics
+using JLD, CSV, Statistics, LinearAlgebra
 
 function create_variables(model,N,L)
     @variable(model,xplus[i = 1:N])
@@ -9,9 +9,11 @@ function create_variables(model,N,L)
 
 end
 function add_constraints(model,N,L, M,K,Lmin, Lmax)
-    println(abs.(Λ).^0.5)
+    S = sqrtm(Λ)
+    println(S)
+    println("Check Λ: ", S'*S==Λ)
 
-    @constraint(model, cost_constraint, [1+ρ; [(abs.(Λ).^0.5)*(model[:xplus]+model[:xminus]); ρ-1]] in SecondOrderCone()) 
+    @constraint(model, cost_constraint, [1+ρ; [sqrtm(Λ)*(model[:xplus]+model[:xminus]); ρ-1]] in SecondOrderCone()) 
     # sum constraints
     @constraint(model, sum_investments, sum(model[:xplus]-model[:xminus]) == M)
     @constraint(model, sum_number_investments, sum(model[:bin]) <= K)
@@ -111,14 +113,14 @@ K = N/2 # maximum number of investments (sum of bin vars)
 Lmin = 1
 Lmax = L
 λ = 0.99
-η = 100.0
+η = 1000.0
 ϵ = 1e-6
 total_num = 3*N+L
 T = 5 # end of period (how many days to consider / rows in data sheet)
 R = get_return_data(N,T)# return rates
 r = (1/T)*ones(1,T)*R
 Λ = calc_variance(N, R)
-ρ = 0.9 # SOC constraint for risk return
+ρ = 5 # SOC constraint for risk return
 H = get_sector_asset_matrix()
 binary_vars = collect(2*N+1:3*N+L) # indices of binary variables
 println("average return rates: ", r)
@@ -142,7 +144,7 @@ println(result)
 #start bnb loop
 println("STARTING CLARABEL BNB LOOP ")
 
-best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,false,false,λ,η) 
+best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ,η) 
 println("Termination status of Clarabel solver:" , solver.info.status)
 println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
 diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
