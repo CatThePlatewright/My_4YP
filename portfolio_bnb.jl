@@ -1,23 +1,23 @@
 using SparseArrays
 include("mixed_binary_solver.jl")
-#import toy_bnb.jl: solve_in_Clarabel, evaluate_constraint, check_lb_pruning, update_ub, select_leaf
 include("toy_bnb.jl")
-
-function add_branching_constraint_new(b::Vector, n::Int, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec)   
+""" important change for SOC problem:
+last constraint in A and b encode the SOC constraint, not the upper bounds
+-> need to extract the correct rows for bounds on boolean variables by skipping
+1(for ρ+1)+ N (number of assets) + 1 (for 1-ρ) = N+2 rows.
+Note that n in this function denotes the TOTAL number of vars so 3*N+L"""
+function add_branching_constraint_new(b::Vector, n::Int, N::Int,fixed_x_indices, fix_values, upper_or_lower_vec)   
     
     println("Fixed x index: ",fixed_x_indices)
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
-        # reminder: b is 1+2*n long where n is the TOTAL number of variables 
         for (i,j,k) in zip(fixed_x_indices, fix_values, upper_or_lower_vec)
             if k == 1
                 println("set upper bound for index: ", i," to ", j)
-                # this is for x[i] <= value which are in the last m:end elements of augmented b
-                b[end-n+i] = j
+                b[end-2-N-n+i] = j
 
             elseif k == -1
                 println("set lower bound for index: ", i," to ", -j)
-                # this is for x[i] >= value which are in the last 2m:m elements of augmented b
-                b[end-2*n+i] = j 
+                b[end-2-N-2*n+i] = j 
             end
         end
             
@@ -25,29 +25,22 @@ function add_branching_constraint_new(b::Vector, n::Int, integer_vars, fixed_x_i
     end
     return b
 end
-function reset_b_vector(b::Vector,n::Int)
-    n_x = Int(n/2) # number of x variables is half the total nb of vars
-    b[2:end-n_x] = zeros(3*n_x)
-    b[end-n_x+1:end] = ones(n_x)
+function reset_b_vector(b::Vector,N::Int, L::Int)
+    b[end-2-5*N-2*L+1:end-2-4*N-L] = zeros(N+L)
+    b[end-2-2*N-L+1:end-2-N] = ones(N+L)
+    println("Reset b: ", b)
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb_new(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable::Bool, warm_start::Bool, λ,η, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing, total_nodes = Nothing)
+function compute_lb_new(solver, n::Int, N::Int, L::Int,fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable::Bool, warm_start::Bool, λ,η, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing, total_nodes = Nothing)
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
-        reset_b_vector(b,n) 
+        reset_b_vector(b,N,L) 
     end
-    simple_domain_propagation!(b,-b[1])
-    b = add_branching_constraint_new(b,n,integer_vars,fixed_x_indices,fix_x_values,upper_or_lower_vec)
-    
-
-    #= println("cones : ", solver.cones.cone_specs)
-    println(" Solver.variables.x : ", solver.variables.x)
-    println(" Solver.variables.z : ", solver.variables.z)
-    println(" Solver.variables.s : ", solver.variables.s)  =#
+    b = add_branching_constraint_new(b,n,N,fixed_x_indices,fix_x_values,upper_or_lower_vec)
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start,λ, η, prev_x, prev_z, prev_s)
@@ -68,7 +61,8 @@ function compute_lb_new(solver, n::Int, fixed_x_indices, fix_x_values,integer_va
 end
 
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,η=1000.0)
+function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,η=1000.0)
+    n = 3*N+L #total number of variables
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -130,7 +124,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb_new returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_nodes = compute_lb_new(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, λ,η,  x, node.data.solution_z, node.data.solution_s, total_nodes) 
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_nodes = compute_lb_new(left_solver, n,N,L,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, λ,η,  x, node.data.solution_z, node.data.solution_s, total_nodes) 
         println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
@@ -153,7 +147,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
         println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_nodes = compute_lb_new(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable, warm_start,λ,η,  x, node.data.solution_z, node.data.solution_s, total_nodes)
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_nodes = compute_lb_new(right_solver,n,N,L, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable, warm_start,λ,η,  x, node.data.solution_z, node.data.solution_s, total_nodes)
         println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, z_right, s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
