@@ -14,6 +14,30 @@ s.t. Ãx ≤ b̃
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
 
+function generate_dense_MPC_Clarabel(index=2400)
+    adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=8.npz")
+    fixed_data = npzread("power_converter/results/fixed_denseMPC_N=8.npz")
+    P = fixed_data["P"]
+    q = adaptive_data["q"][:,index]
+    A = fixed_data["A"] 
+    b = zeros(size(A,1))
+    index_set = fixed_data["i_idx"] .+ 1 # offset by 1 since extracted from python array starting from 0 not 1 as in julia
+
+    println("Conditioning number of P: ",cond(P))
+
+    # construct augmented A and b containing all inequality constraints
+    l = b + fixed_data["l"] #extended array of lower bounds
+    u = b + adaptive_data["u"][:,index]
+    lb = fixed_data["i_l"] #lower bound on integer variables
+    ub = fixed_data["i_u"] # upper bound on integer variables 
+    dim = length(lb)
+    # for -Ax ≤ -l constraints, consider only last 3N ([dim+1:end]) rows since no lower bound for (R-SB)*U ≤ S*X constraints (set to Inf)
+    Ã = vcat(A, -A[dim+1:end,:], -I, I)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
+    b̃ = vcat(u, -l[dim+1:end], -lb, ub)
+    s = [Clarabel.NonnegativeConeT(length(b̃))]
+    return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
+end
+
 function generate_MPC_Clarabel(index=2400)
     adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\adaptive_data.npy")
     fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\matrice_data.npy")
