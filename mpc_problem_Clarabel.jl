@@ -44,6 +44,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
     end
     P = blockdiag(P,sparse(P0))
     P = blockdiag(P, spzeros(nu*horizon,nu*horizon))
+    P .*= 2     #later on, we define cost as 0.5*x'Px + q'x
     q = vcat(zeros(nx*horizon), 2*q0*γ^horizon, zeros(nu*horizon))
 
     # equality constraints Gx = h
