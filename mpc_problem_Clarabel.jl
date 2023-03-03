@@ -38,6 +38,13 @@ function generate_MPC_Clarabel(index=2400)
     return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
 end
 
+function factorize_optimization_based_matrix(data,I_B,G, σ, η, γ)
+    eyemat=Matrix(1.0I, data.n, data.n) 
+    ldltS = ldlt([Symmetric(data.P+σ*eyemat)     I_B    G';
+            I_B   -η*eyemat         zeros(data.n,data.n);
+            G     zeros(data.n,data.n)     -γ*eyemat])
+    return ldltS
+end
     
 without_iter_num = Int64[]
 with_iter_num = Int64[]
@@ -71,13 +78,15 @@ for i = start_horizon:end_horizon
     println("b : ", b)
     println("s : ", s)  =#
     λ=0.99
-    η= 1000 # set to 1000.0 to disable optimise_correction entirely
+    η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
+    γ = 1e-3
     ϵ = 1e-8
 
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
     Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
+    ldltS = factorize_optimization_based_matrix(Clarabel.data,I_B,G,σ,η, γ)
     
     base_solution = Clarabel.solve!(solver)
     println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
@@ -85,7 +94,7 @@ for i = start_horizon:end_horizon
 #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,η,true,false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,η,true,false,ldltS) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -110,7 +119,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,η,false,false) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,η,false,false,ldltS) 
     println("Found objective without early_term: ", best_ub_without)
     println("Number of early terminated nodes (without): ", early_num_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)

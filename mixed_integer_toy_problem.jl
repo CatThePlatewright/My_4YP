@@ -57,7 +57,6 @@ end
 
 n_range =2:12
 λ = 0.99
-η = 1000.0
 ϵ = 1e-6
 without_iter_num = Int64[]
 with_iter_num = Int64[]
@@ -83,7 +82,7 @@ for n in n_range
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
  
-    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ,η) #want total number of vars: 2*n
+    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
     diff_sol_vector= feasible_solution - value.(exact_model[:x])
