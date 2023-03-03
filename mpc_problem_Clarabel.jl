@@ -1,7 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
-# include("mpc_bnb.jl")
+include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -39,7 +39,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
     # generate cost P, q
     Qi = sparse(barC'*barC)
     P = deepcopy(Qi)
-    for i = 1:T-1
+    for i = 1:horizon-1
         P = blockdiag(P,γ^i*Qi)
     end
     P = blockdiag(P,sparse(P0))
