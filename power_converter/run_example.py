@@ -37,7 +37,8 @@ def run_example():
     '''
     gamma = 0.95                # Forgetting factor
     # N_adp = np.arange(1, 6)     # Horizon length
-    N_adp = np.array([2, 4, 6, 8, 10, 12])
+    # N_adp = np.array([2])
+    N_adp = np.array([2, 4, 6, 8])
     delta = 5.5                 # Switching frequency penalty
     N_tail = 50
 

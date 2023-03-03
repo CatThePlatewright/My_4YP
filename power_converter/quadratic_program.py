@@ -88,6 +88,14 @@ class MIQP(object):
         R = np.vstack((np.kron(np.eye(N), G - T), np.kron(np.eye(N), -G - T)))
         F = np.kron(np.eye(N), T)
 
+        ##########################################
+        # YC: save data for MPC
+        ##########################################
+        filename_4 = 'results/fixed_sparseMPC_N=' + str(N) + '.npz'
+        np.savez(filename_4, A = A, B = B, C = C, P0 = P0, q0 = q0, r0 = r0, gamma = gamma, \
+                 S = S, R = R, F = F)
+
+
         # Linear constraints
         qp_A = spa.csc_matrix(np.vstack((R - S.dot(B_tilde), F)))
 

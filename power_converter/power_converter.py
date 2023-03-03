@@ -448,7 +448,7 @@ class Model(object):
 
             if self.solver is None:
                 # Define problem settings
-                miosqp_settings = {'eps_int_feas': 1e-02,   # integer feasibility tolerance
+                miosqp_settings = {'eps_int_feas': 1e-03,   # integer feasibility tolerance
                                    'max_iter_bb': 2000,     # maximum number of iterations
                                    'tree_explor_rule': 1,   # tree exploration rule
                                                             #   [0] depth first
@@ -636,10 +636,12 @@ class Model(object):
         (ncons, nvar) = self.qp_matrices.A.shape
         dense_adaptive_q= np.zeros((nvar, T_final))
         dense_adaptive_u = np.zeros((ncons, T_final))
+        sparse_adaptive_P0 = np.zeros((nx*nx, T_final))
+        sparse_adaptive_q0 = np.zeros((nx, T_final))
+        sparse_x0 = np.zeros((nx, T_final))
 
         # Run loop
         for i in tqdm(range(T_final)):
-
             # Compute mpc inputs
             U[:, i], obj_vals[i], time_temp, u_prev, osqp_time, osqp_iter, ad_q, ad_u = \
                 self.compute_mpc_input(X[:, i], u_prev, solver=solver)
@@ -649,6 +651,7 @@ class Model(object):
             ###############################
             dense_adaptive_q[:, i] = ad_q
             dense_adaptive_u[:, i] = ad_u
+
 
 
             # Store time if after the init periods
@@ -684,6 +687,11 @@ class Model(object):
 
         np.savez(filename_1, q = dense_adaptive_q, u = dense_adaptive_u)
         np.savez(filename_2, P = self.qp_matrices.P.todense(), A = self.qp_matrices.A.todense(), i_idx = self.qp_matrices.i_idx, i_l = self.qp_matrices.i_l, i_u = self.qp_matrices.i_u, l = self.qp_matrices.l)
+
+        filename_3 = 'results/adaptive_sparseMPC_N=' + str(N) + '.npz'
+
+
+        np.savez(filename_3, x0 = X)
 
         # Create simulation results
         results = SimulationResults(X, U, Y_phase, Y_star_phase, T_e, T_e_des,

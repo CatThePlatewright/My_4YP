@@ -1,7 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
-include("mpc_bnb.jl")
+# include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -14,6 +14,62 @@ s.t. Ãx ≤ b̃
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
 
+# Formulation of MPC with state variables
+function generate_sparse_MPC_Clarabel(index=2400)
+    adaptive_data = npzread("power_converter/results/adaptive_sparseMPC_N=8.npz")
+    fixed_data = npzread("power_converter/results/fixed_sparseMPC_N=8.npz")
+
+    x0 = adaptive_data["x0"]
+    barA = fixed_data["A"]
+    barB = fixed_data["B"]
+    barC = fixed_data["C"]
+    P0 = fixed_data["P0"]
+    q0 = fixed_data["q0"]
+    γ = fixed_data["gamma"]
+    S = fixed_data["S"]
+    R = fixed_data["R"]
+    F = fixed_data["F"]   
+    horizon = fixed_data["horizon"]
+    
+    # generate the sparse MPC model
+    (nx,nu) = size(barB)   #dimension of x,u in x_{k+1} = ̄Ax_k + ̄Bu_k
+    (mF,nF) = size(F)
+    (mS,nS) = size(S)
+
+    # generate cost P, q
+    Qi = sparse(barC'*barC)
+    P = deepcopy(Qi)
+    for i = 1:T-1
+        P = blockdiag(P,γ^i*Qi)
+    end
+    P = blockdiag(P,sparse(P0))
+    P = blockdiag(P, spzeros(nu*horizon,nu*horizon))
+    q = vcat(zeros(nx*horizon), 2*q0*γ^horizon, zeros(nu*horizon))
+
+    # equality constraints Gx = h
+    G1 = blockdiag(spdiagm(ones(nx)), -spdiagm(ones(nx*horizon)))
+    G2 = kron(spdiagm(ones(horizon)),barA)
+    G3 = kron(spdiagm(ones(horizon)),barB)
+    G = [G1 + [spzeros(nx,nx*(horizon+1));G2 spzeros(nx*horizon,nx)] vcat(spzeros(nx,nu*horizon),G3)]
+    h = vcat(x0[:,index],zeros((nx+nu)*horizon,1))
+
+    #inequality constraints Ax ≤ b
+    A = sparse([-S R; zeros(mF,nS) F])
+    b = vcat(zeros(mS,1), ones(mF,1))
+
+    # box constraints lb ≤ Ib*x ≤ ub
+    Ib = sparse([zeros(nu*horizon,nx*(horizon+1)) 1.0*I])
+    lb = -ones(nu*horizon);
+    ub = ones(nu*horizon);
+
+    # construct augmented ̃A and ̃b containing all constraints
+    Ã = vcat(G, A, -Ib, Ib)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
+    b̃ = vcat(h, b, -lb, ub)
+    cones = [Clarabel.ZeroConeT(length(h)), Clarabel.NonnegativeConeT(length(b) + 2*length(lb))]
+    return P, q, Ã, b̃, cones, lb, ub
+end
+
+# Formulation of MPC without state variables
 function generate_dense_MPC_Clarabel(index=2400)
     adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=8.npz")
     fixed_data = npzread("power_converter/results/fixed_denseMPC_N=8.npz")
@@ -23,19 +79,17 @@ function generate_dense_MPC_Clarabel(index=2400)
     b = zeros(size(A,1))
     index_set = fixed_data["i_idx"] .+ 1 # offset by 1 since extracted from python array starting from 0 not 1 as in julia
 
-    println("Conditioning number of P: ",cond(P))
-
     # construct augmented A and b containing all inequality constraints
     l = b + fixed_data["l"] #extended array of lower bounds
     u = b + adaptive_data["u"][:,index]
     lb = fixed_data["i_l"] #lower bound on integer variables
-    ub = fixed_data["i_u"] # upper bound on integer variables 
+    ub = fixed_data["i_u"] # upper bound on integer variables
     dim = length(lb)
     # for -Ax ≤ -l constraints, consider only last 3N ([dim+1:end]) rows since no lower bound for (R-SB)*U ≤ S*X constraints (set to Inf)
     Ã = vcat(A, -A[dim+1:end,:], -I, I)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
     b̃ = vcat(u, -l[dim+1:end], -lb, ub)
-    s = [Clarabel.NonnegativeConeT(length(b̃))]
-    return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
+    cones = [Clarabel.NonnegativeConeT(length(b̃))]
+    return sparse(P), q, sparse(Ã), b̃, cones, index_set, sparse(A), b, l, u, lb, ub
 end
 
 function generate_MPC_Clarabel(index=2400)
