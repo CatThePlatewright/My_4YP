@@ -78,8 +78,8 @@ function factorize_optimization_based_matrix(data,Ib,G, σ, η, γ)
 end
 # Formulation of MPC without state variables
 function generate_dense_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=8.npz")
-    fixed_data = npzread("power_converter/results/fixed_denseMPC_N=8.npz")
+    adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=2.npz")
+    fixed_data = npzread("power_converter/results/fixed_denseMPC_N=2.npz")
     P = fixed_data["P"]
     q = adaptive_data["q"][:,index]
     A = fixed_data["A"] 
@@ -131,12 +131,13 @@ for i = start_horizon:end_horizon
     η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
     γ = 1e-3
     ϵ = 1e-8
-
+    σ = 1e-7
+#= 
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
-    Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
-    ldltS = factorize_optimization_based_matrix(Clarabel.solver.data,I_B,G,σ,η, γ)
+    Clarabel.setup!(solver, P, q, Ã, b̃,cones, settings)
+    ldltS = factorize_optimization_based_matrix(solver.data,Ib,G,σ,η, γ)
     base_solution = Clarabel.solve!(solver)
     println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
 
@@ -181,31 +182,32 @@ for i = start_horizon:end_horizon
         append!(first_iter_num, fea_iter)
     end
 
-    println(" ")
+    println(" ") =#
 
     
-end 
-#= for i = start_horizon:end_horizon
+
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
     n = length(q)
 
-    model = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(model, "OutputFlag", 0)
-    @variable(model, x[1:n])
+    model2 = Model(Gurobi.Optimizer)
+    set_optimizer_attribute(model2, "OutputFlag", 0)
+    @variable(model2, x[1:n])
     set_integer.(x[i_idx])  #set integer constraints
-    @objective(model, Min, 0.5*x'*P*x + q' * x )
+    @objective(model2, Min, 0.5*x'*P*x + q' * x )
     dim = length(lb)
-    @constraints(model, begin
+    @constraints(model2, begin
         x .>= lb
         x .<= ub
     # for -Ax ≤ -l constraints, consider only last 3N rows since no lower bound for (R-SB)*U ≤ S*X constraints
         b[dim+1:end] + A[dim+1:end,:]*x .>= l[dim+1:end] # TOASK: confirm that A should be +fixed_data not -?
         b + A*x .<= u
     end)
-    optimize!(model)
-    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
-    #= println("P: ", P)
+    optimize!(model2)
+    println("Gurobi base_solution: ", objective_value(model2) , " using ", value.(model2[:x])) 
+    printstyled("Same solution:", objective_value(model) == objective_value(model2), "\n",color=:green)
+end
+ #=   #= println("P: ", P)
     println("q : ", q)
     println("A : ", A)
     println("b : ", b)
