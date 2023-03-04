@@ -51,7 +51,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
     G2 = kron(spdiagm(ones(horizon)),barA)
     G3 = kron(spdiagm(ones(horizon)),barB)
     G = [G1 + [spzeros(nx,nx*(horizon+1));G2 spzeros(nx*horizon,nx)] vcat(spzeros(nx,nu*horizon),G3)]
-    h = vcat(x0[:,index],zeros((nx+nu)*horizon,1))[:]
+    h = vcat(x0[:,index],zeros(nx*horizon,1))[:]
 
     #inequality constraints Ax ≤ b
     A = sparse([-S R; zeros(mF,nS) F])
