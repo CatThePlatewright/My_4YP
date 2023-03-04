@@ -1,7 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
-include("mpc_bnb.jl")
+# include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -44,14 +44,14 @@ function generate_sparse_MPC_Clarabel(index=2400)
     P = blockdiag(P,sparse(P0))
     P = blockdiag(P, spzeros(nu*horizon,nu*horizon))
     P .*= 2     #later on, we define cost as 0.5*x'Px + q'x
-    q = vcat(zeros(nx*horizon), 2*q0*γ^horizon, zeros(nu*horizon))
+    q = vcat(zeros(nx*horizon), 2*q0*γ^horizon, zeros(nu*horizon))[:]
 
     # equality constraints Gx = h
     G1 = blockdiag(spdiagm(ones(nx)), -spdiagm(ones(nx*horizon)))
     G2 = kron(spdiagm(ones(horizon)),barA)
     G3 = kron(spdiagm(ones(horizon)),barB)
     G = [G1 + [spzeros(nx,nx*(horizon+1));G2 spzeros(nx*horizon,nx)] vcat(spzeros(nx,nu*horizon),G3)]
-    h = vcat(x0[:,index],zeros((nx+nu)*horizon,1))
+    h = vcat(x0[:,index],zeros((nx+nu)*horizon,1))[:]
 
     #inequality constraints Ax ≤ b
     A = sparse([-S R; zeros(mF,nS) F])
@@ -64,7 +64,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
 
     # construct augmented ̃A and ̃b containing all constraints
     Ã = vcat(G, A, -Ib, Ib)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
-    b̃ = vcat(h, b, -lb, ub)
+    b̃ = vcat(h, b, -lb, ub)[:]
     cones = [Clarabel.ZeroConeT(length(h)), Clarabel.NonnegativeConeT(length(b) + 2*length(lb))]
     return sparse(P), q, G,h, Ib, sparse(A), b, sparse(Ã), b̃, cones, lb, ub
 end
