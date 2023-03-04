@@ -1,7 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
-# include("mpc_bnb.jl")
+include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -110,13 +110,6 @@ for i = start_horizon:end_horizon
     P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub, i_idx= generate_sparse_MPC_Clarabel(i)
     n = length(q)
     nu = length(lb)
-    println("length of q ", n)
-    println("size of P ", size(P))
-    println("P: ", P)
-    println("q : ", q)
-    println("A : ", A)
-    println("b : ", b)
-    println("cones : ", cones)  
 
     model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "OutputFlag", 0)
