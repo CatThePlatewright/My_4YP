@@ -1,7 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
-# include("mpc_bnb.jl")
+include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -13,12 +13,11 @@ min ...
 s.t. Ãx ≤ b̃ 
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
-
+N=2
 # Formulation of MPC with state variables
 function generate_sparse_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("power_converter/results/adaptive_sparseMPC_N=8.npz")
-    fixed_data = npzread("power_converter/results/fixed_sparseMPC_N=8.npz")
-
+    adaptive_data = npzread("power_converter/results/adaptive_sparseMPC_N=2.npz") # we have N = 2,4,6,8,10,12
+    fixed_data = npzread("power_converter/results/fixed_sparseMPC_N=2.npz")
     x0 = adaptive_data["x0"]
     barA = fixed_data["A"]
     barB = fixed_data["B"]
@@ -39,7 +38,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
     # generate cost P, q
     Qi = sparse(barC'*barC)
     P = deepcopy(Qi)
-    for i = 1:T-1
+    for i = 1:horizon-1
         P = blockdiag(P,γ^i*Qi)
     end
     P = blockdiag(P,sparse(P0))
@@ -66,9 +65,15 @@ function generate_sparse_MPC_Clarabel(index=2400)
     Ã = vcat(G, A, -Ib, Ib)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
     b̃ = vcat(h, b, -lb, ub)
     cones = [Clarabel.ZeroConeT(length(h)), Clarabel.NonnegativeConeT(length(b) + 2*length(lb))]
-    return P, q, Ã, b̃, cones, lb, ub
+    return sparse(P), q, G,h, Ib, sparse(A), b, sparse(Ã), b̃, cones, lb, ub
 end
-
+function factorize_optimization_based_matrix(data,Ib,G, σ, η, γ)
+    eyemat=Matrix(1.0I, data.n, data.n) 
+    ldltS = ldlt([Symmetric(data.P+σ*eyemat)     Ib    G';
+            Ib   -η*eyemat         zeros(data.n,data.n);
+            G     zeros(data.n,data.n)     -γ*eyemat])
+    return ldltS
+end
 # Formulation of MPC without state variables
 function generate_dense_MPC_Clarabel(index=2400)
     adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=8.npz")
@@ -91,48 +96,100 @@ function generate_dense_MPC_Clarabel(index=2400)
     cones = [Clarabel.NonnegativeConeT(length(b̃))]
     return sparse(P), q, sparse(Ã), b̃, cones, index_set, sparse(A), b, l, u, lb, ub
 end
-
-function generate_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\adaptive_data.npy")
-    fixed_data = npzread("paper_test_miqp-main\\mpc_data\\N=8\\matrice_data.npy")
-    P = fixed_data["P"]
-    q = adaptive_data["q_array"][index,:]
-    A = fixed_data["A"] 
-    b = zeros(size(A,1))
-    index_set = fixed_data["i_idx"] .+ 1 # offset by 1 since extracted from python array starting from 0 not 1 as in julia
-
-    println("Conditioning number of P: ",cond(P))
-
-    # construct augmented A and b containing all inequality constraints
-    l = b + fixed_data["l"] #extended array of lower bounds
-    u = b + adaptive_data["q_u_array"][index,:]
-    lb = fixed_data["i_l"] #lower bound on integer variables
-    ub = fixed_data["i_u"] # upper bound on integer variables 
-    dim = length(lb)
-    # for -Ax ≤ -l constraints, consider only last 3N ([dim+1:end]) rows since no lower bound for (R-SB)*U ≤ S*X constraints (set to Inf)
-    Ã = vcat(A, -A[dim+1:end,:], -I, I)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
-    b̃ = vcat(u, -l[dim+1:end], -lb, ub)
-    s = [Clarabel.NonnegativeConeT(length(b̃))]
-    return sparse(P), q, sparse(Ã), b̃, s, index_set, sparse(A), b, l, u, lb, ub
-end
-
-function factorize_optimization_based_matrix(data,I_B,G, σ, η, γ)
-    eyemat=Matrix(1.0I, data.n, data.n) 
-    ldltS = ldlt([Symmetric(data.P+σ*eyemat)     I_B    G';
-            I_B   -η*eyemat         zeros(data.n,data.n);
-            G     zeros(data.n,data.n)     -γ*eyemat])
-    return ldltS
-end
     
 without_iter_num = Int64[]
 with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
 start_horizon = 2200
-end_horizon = 2300
+end_horizon = 2230
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
-    P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_MPC_Clarabel(i)
+    P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub= generate_sparse_MPC_Clarabel(i)
+    n = length(q)
+    nu = length(lb)
+    i_idx = N+2:N+2+nu
+    model = Model(Gurobi.Optimizer)
+    set_optimizer_attribute(model, "OutputFlag", 0)
+    @variable(model, x[1:n])
+    set_integer.(x[i_idx])  #set integer constraints
+    @objective(model, Min, 0.5*x'*P*x + q' * x )
+    dim = length(lb)
+    @constraints(model, begin
+        G*x .== h
+        A*x .<= b
+        # box constraints lb ≤ Ib*x ≤ ub
+        Ib*x .>= lb
+        Ib*x .<= ub
+    end)
+    optimize!(model)
+    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    println("P: ", P)
+    println("q : ", q)
+    println("A : ", A)
+    println("b : ", b)
+    println("s : ", s)  
+    λ=0.99
+    η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
+    γ = 1e-3
+    ϵ = 1e-8
+
+    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+    solver   = Clarabel.Solver()
+
+    Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
+    ldltS = factorize_optimization_based_matrix(Clarabel.solver.data,I_B,G,σ,η, γ)
+    base_solution = Clarabel.solve!(solver)
+    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
+
+    #start bnb loop
+    println("STARTING CLARABEL BNB LOOP ")
+
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,ldltS,true,false) 
+
+    
+    println("Termination status of Clarabel solver:" , solver.info.status)
+    println("Number of early terminated nodes: ", early_num)
+    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    println(" ")
+    diff_sol_vector= feasible_solution - value.(model[:x])
+    diff_solution=round(norm(diff_sol_vector),digits=5)
+    diff_obj = round(best_ub-objective_value(model),digits=6)
+    if ~iszero(diff_solution) || ~iszero(diff_obj)
+        println("Solution diff: ",diff_solution, "Obj difference: ", diff_obj)
+        println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
+        println("Horizon iteration number: ", i)
+        error("Solutions differ!")
+    end
+
+    # count QP iterations    
+    printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
+    solver_without   = Clarabel.Solver()
+
+    Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
+    
+    base_solution_without = Clarabel.solve!(solver_without)
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,ldltS,false,false) 
+    println("Found objective without early_term: ", best_ub_without)
+    println("Number of early terminated nodes (without): ", early_num_without)
+    printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
+    reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
+    println("Reduced iterations (percentage): ", reduction)
+    append!(without_iter_num, total_iter_without)
+    append!(with_iter_num, total_iter)
+    append!(percentage_iter_reduction, reduction)
+    if (fea_iter == fea_iter_without)
+        append!(first_iter_num, fea_iter)
+    end
+
+    println(" ")
+
+    
+end 
+#= for i = start_horizon:end_horizon
+    printstyled("Horizon iteration: ", i, "\n", color = :magenta)
+    P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
     n = length(q)
 
     model = Model(Gurobi.Optimizer)
@@ -164,15 +221,15 @@ for i = start_horizon:end_horizon
     solver   = Clarabel.Solver()
 
     Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
-    ldltS = factorize_optimization_based_matrix(Clarabel.data,I_B,G,σ,η, γ)
-    
+    #ldltS = factorize_optimization_based_matrix(Clarabel.solver.data,I_B,G,σ,η, γ)
+    ldltS = Nothing
     base_solution = Clarabel.solve!(solver)
     println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
 
-#start bnb loop
+    #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,η,true,false,ldltS) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, false, λ,ldltS,true,false) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -197,7 +254,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,η,false,false,ldltS) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,ldltS,false,false) 
     println("Found objective without early_term: ", best_ub_without)
     println("Number of early terminated nodes (without): ", early_num_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
@@ -213,6 +270,6 @@ for i = start_horizon:end_horizon
     println(" ")
 
     
-end 
+end  =#
    
-save("mimpc_iterations_N=8.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("mpc_dense_N=8.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)

@@ -34,7 +34,7 @@ end
 function solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start::Bool, N, λ,  prev_x, prev_z, prev_s)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
     #reset_solver!(solver) 
-    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, true, N, λ, prev_x, prev_z, prev_s)
+    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, true, λ, prev_x, prev_z, prev_s,N)
 
     return result
 end
