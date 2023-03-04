@@ -23,13 +23,13 @@ function generate_sparse_MPC_Clarabel(index=2400)
     barB = fixed_data["B"]
     barC = fixed_data["C"]
     P0 = fixed_data["P0"]
-    q0 = fixed_data["q0"]
+    q0 = fixed_data["q0"] # has length of variable x at horizon N, so nx entries (12 for N=2)
     γ = fixed_data["gamma"]
     S = fixed_data["S"]
     R = fixed_data["R"]
     F = fixed_data["F"]   
     horizon = fixed_data["horizon"]
-    
+    println("horizon: ", horizon)
     # generate the sparse MPC model
     (nx,nu) = size(barB)   #dimension of x,u in x_{k+1} = ̄Ax_k + ̄Bu_k
     (mF,nF) = size(F)
@@ -65,8 +65,9 @@ function generate_sparse_MPC_Clarabel(index=2400)
     # construct augmented ̃A and ̃b containing all constraints
     Ã = vcat(G, A, -Ib, Ib)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
     b̃ = vcat(h, b, -lb, ub)[:]
+    i_idx = collect(lastindex(q)-horizon*nu+1:lastindex(q))#2 is for box constraints and 6 is the dimension of u for each time horizon
     cones = [Clarabel.ZeroConeT(length(h)), Clarabel.NonnegativeConeT(length(b) + 2*length(lb))]
-    return sparse(P), q, G,h, Ib, sparse(A), b, sparse(Ã), b̃, cones, lb, ub
+    return sparse(P), q, G,h, Ib, sparse(A), b, sparse(Ã), b̃, cones, lb, ub, i_idx
 end
 function factorize_optimization_based_matrix(data,Ib,G, σ, η, γ)
     eyemat=Matrix(1.0I, data.n, data.n) 
@@ -106,10 +107,17 @@ start_horizon = 2200
 end_horizon = 2230
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
-    P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub= generate_sparse_MPC_Clarabel(i)
+    P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub, i_idx= generate_sparse_MPC_Clarabel(i)
     n = length(q)
     nu = length(lb)
-    i_idx = N+2:N+2+nu
+    println("length of q ", n)
+    println("size of P ", size(P))
+    println("P: ", P)
+    println("q : ", q)
+    println("A : ", A)
+    println("b : ", b)
+    println("cones : ", cones)  
+
     model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "OutputFlag", 0)
     @variable(model, x[1:n])
@@ -125,11 +133,7 @@ for i = start_horizon:end_horizon
     end)
     optimize!(model)
     println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
-    println("P: ", P)
-    println("q : ", q)
-    println("A : ", A)
-    println("b : ", b)
-    println("s : ", s)  
+    
     λ=0.99
     η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
     γ = 1e-3
@@ -273,4 +277,4 @@ end
     
 end  =#
    
-save("mpc_dense_N=8.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save("mpc_dense_N=2.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
