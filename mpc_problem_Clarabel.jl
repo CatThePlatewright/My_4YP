@@ -2,7 +2,7 @@ using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
 using Gurobi
-include("mpc_bnb.jl")
+# include("mpc_bnb.jl")
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -208,7 +208,9 @@ for i = start_horizon:end_horizon
     optimize!(model2)
     uopt2 = value.(x)
     println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
-    printstyled("Same solution:", all(uopt1 .== uopt2), "\n",color=:green)
+    check_flag = all(uopt1 .== uopt2)
+    @assert(check_flag == true)
+    printstyled("Same solution:", check_flag, "\n",color=:green)
 end
  #=   #= println("P: ", P)
     println("q : ", q)
