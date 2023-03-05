@@ -1,6 +1,7 @@
 using SparseArrays, LinearAlgebra
 using NPZ
 using JLD
+using Gurobi
 include("mpc_bnb.jl")
 """
 ADMM problem format:
@@ -112,7 +113,7 @@ for i = start_horizon:end_horizon
     nu = length(lb)
 
     model = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(model, "OutputFlag", 0)
+    # set_optimizer_attribute(model, "OutputFlag", 0)
     @variable(model, x[1:n])
     set_integer.(x[i_idx])  #set integer constraints
     @objective(model, Min, 0.5*x'*P*x + q' * x )
@@ -125,7 +126,8 @@ for i = start_horizon:end_horizon
         Ib*x .<= ub
     end)
     optimize!(model)
-    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    uopt1 = value.(x)[end - nu + 1:end]
+    println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
     
     λ=0.99
     η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
@@ -204,8 +206,9 @@ for i = start_horizon:end_horizon
         b + A*x .<= u
     end)
     optimize!(model2)
-    println("Gurobi base_solution: ", objective_value(model2) , " using ", value.(model2[:x])) 
-    printstyled("Same solution:", objective_value(model) == objective_value(model2), "\n",color=:green)
+    uopt2 = value.(x)
+    println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
+    printstyled("Same solution:", all(uopt1 .== uopt2), "\n",color=:green)
 end
  #=   #= println("P: ", P)
     println("q : ", q)
