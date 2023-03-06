@@ -3,6 +3,8 @@ using NPZ
 using JLD
 using Printf
 include("mpc_bnb.jl")
+using Gurobi
+
 """
 ADMM problem format:
 min 0.5 x'Px + q'x
@@ -129,7 +131,8 @@ for i = start_horizon:end_horizon
         Ib*x .<= ub
     end)
     optimize!(model)
-    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    uopt1 = value.(x)[end - nu + 1:end]
+    println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
     
     λ=0.99
     η= 1e3  # 1e-3 result in no early termination at all
@@ -209,9 +212,13 @@ end
         b + A*x .<= u
     end)
     optimize!(model2)
-    println("Gurobi base_solution: ", objective_value(model2) , " using ", value.(model2[:x])) 
-    printstyled("Same solution:", objective_value(model) == objective_value(model2), "\n",color=:green)
-    println("P: ", P)
+    uopt2 = value.(x)
+    println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
+    check_flag = all(uopt1 .== uopt2)
+    @assert(check_flag == true)
+    printstyled("Same solution:", check_flag, "\n",color=:green)
+end
+ #=   #= println("P: ", P)
     println("q : ", q)
     println("A : ", A)
     println("b : ", b)
@@ -275,5 +282,6 @@ end
 
     
 end  =#
+save((@sprintf("mpc_sparse_N=%d.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
    
 save((@sprintf("mpc_sparse_N=%d.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
