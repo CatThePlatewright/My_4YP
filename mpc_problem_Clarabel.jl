@@ -1,6 +1,7 @@
-using SparseArrays, LinearAlgebra
+using SparseArrays, LinearAlgebra, QDLDL
 using NPZ
 using JLD
+using Printf
 include("mpc_bnb.jl")
 """
 ADMM problem format:
@@ -13,11 +14,11 @@ min ...
 s.t. Ãx ≤ b̃ 
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
-N=2
+N=8
 # Formulation of MPC with state variables
 function generate_sparse_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("power_converter/results/adaptive_sparseMPC_N=2.npz") # we have N = 2,4,6,8,10,12
-    fixed_data = npzread("power_converter/results/fixed_sparseMPC_N=2.npz")
+    adaptive_data = npzread(@sprintf("power_converter/results/adaptive_sparseMPC_N=%d.npz",N)) # we have N = 2,4,6,8,10,12
+    fixed_data = npzread(@sprintf("power_converter/results/fixed_sparseMPC_N=%d.npz",N))
     x0 = adaptive_data["x0"]
     barA = fixed_data["A"]
     barB = fixed_data["B"]
@@ -34,7 +35,6 @@ function generate_sparse_MPC_Clarabel(index=2400)
     (nx,nu) = size(barB)   #dimension of x,u in x_{k+1} = ̄Ax_k + ̄Bu_k
     (mF,nF) = size(F)
     (mS,nS) = size(S)
-
     # generate cost P, q
     Qi = sparse(barC'*barC)
     P = deepcopy(Qi)
@@ -65,15 +65,18 @@ function generate_sparse_MPC_Clarabel(index=2400)
     # construct augmented ̃A and ̃b containing all constraints
     Ã = vcat(G, A, -Ib, Ib)  # ATTENTION: to be consistent with toy problem, have ordered 1. lb 2.ub
     b̃ = vcat(h, b, -lb, ub)[:]
-    i_idx = collect(lastindex(q)-horizon*nu+1:lastindex(q))#2 is for box constraints and 6 is the dimension of u for each time horizon
+    i_idx = collect(lastindex(q)-horizon*nu+1:lastindex(q)) #6 is the dimension of u for each time horizon
     cones = [Clarabel.ZeroConeT(length(h)), Clarabel.NonnegativeConeT(length(b) + 2*length(lb))]
     return sparse(P), q, G,h, Ib, sparse(A), b, sparse(Ã), b̃, cones, lb, ub, i_idx
 end
 function factorize_optimization_based_matrix(data,Ib,G, σ, η, γ)
-    eyemat=Matrix(1.0I, data.n, data.n) 
-    ldltS = ldlt([Symmetric(data.P+σ*eyemat)     Ib    G';
-            Ib   -η*eyemat         zeros(data.n,data.n);
-            G     zeros(data.n,data.n)     -γ*eyemat])
+    n = data.n 
+    g_width = size(G)[1]
+    ib_width = size(Ib)[1]
+    S = [Symmetric(data.P+σ*Matrix(1.0I,n,n))     Ib'    G';
+    Ib   -η*Matrix(1.0I, ib_width, ib_width)        zeros(ib_width,g_width);
+    G     zeros(g_width, ib_width)     -γ*Matrix(1.0I, g_width,g_width)]
+    ldltS = ldlt(sparse(S))
     return ldltS
 end
 # Formulation of MPC without state variables
@@ -104,12 +107,13 @@ with_iter_num = Int64[]
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
 start_horizon = 2200
-end_horizon = 2230
+end_horizon = 2300
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub, i_idx= generate_sparse_MPC_Clarabel(i)
     n = length(q)
     nu = length(lb)
+    println(length(i_idx))
 
     model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "OutputFlag", 0)
@@ -128,11 +132,11 @@ for i = start_horizon:end_horizon
     println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
     
     λ=0.99
-    η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
-    γ = 1e-3
+    η= 1e3  # 1e-3 result in no early termination at all
+    γ = 1e3
     ϵ = 1e-8
     σ = 1e-7
-#= 
+ 
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
 
@@ -153,7 +157,7 @@ for i = start_horizon:end_horizon
     println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
     println(" ")
     diff_sol_vector= feasible_solution - value.(model[:x])
-    diff_solution=round(norm(diff_sol_vector),digits=5)
+    diff_solution=round(norm(diff_sol_vector),digits=3)
     diff_obj = round(best_ub-objective_value(model),digits=6)
     if ~iszero(diff_solution) || ~iszero(diff_obj)
         println("Solution diff: ",diff_solution, "Obj difference: ", diff_obj)
@@ -161,12 +165,13 @@ for i = start_horizon:end_horizon
         println("Horizon iteration number: ", i)
         error("Solutions differ!")
     end
+    
 
     # count QP iterations    
     printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
     solver_without   = Clarabel.Solver()
 
-    Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
+    Clarabel.setup!(solver_without, P, q, Ã, b̃,cones, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
     best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, false,λ,ldltS,false,false) 
@@ -182,10 +187,10 @@ for i = start_horizon:end_horizon
         append!(first_iter_num, fea_iter)
     end
 
-    println(" ") =#
-
-    
-
+    println(" ") 
+end
+ #=   
+ 
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
     n = length(q)
@@ -206,12 +211,11 @@ for i = start_horizon:end_horizon
     optimize!(model2)
     println("Gurobi base_solution: ", objective_value(model2) , " using ", value.(model2[:x])) 
     printstyled("Same solution:", objective_value(model) == objective_value(model2), "\n",color=:green)
-end
- #=   #= println("P: ", P)
+    println("P: ", P)
     println("q : ", q)
     println("A : ", A)
     println("b : ", b)
-    println("s : ", s)  =#
+    println("s : ", s)  
     λ=0.99
     η= 1e-3 # set to 1000.0 to disable optimise_correction entirely
     γ = 1e-3
@@ -272,4 +276,4 @@ end
     
 end  =#
    
-save("mpc_dense_N=2.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save((@sprintf("mpc_sparse_N=%d.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)

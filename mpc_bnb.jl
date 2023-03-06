@@ -93,7 +93,7 @@ end
 function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_values, upper_or_lower_vec, debug_print=false)    
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
         m = length(integer_vars)
-        # match the indices to the indices in augmented vector b (which only augmented for integer_vars)
+        # match the indices to the indices in vector b that only contains box constraints for u vars not the x vars! (checked on 05/03)
         # e.g. integer_vars = [1,2,5], fixed_x_indices=[1,5] then we want the 1st and 3rd element
         indices_in_b = [findfirst(x->x==i,integer_vars) for i in fixed_x_indices]
         for (i,j,k) in zip(indices_in_b, fix_values, upper_or_lower_vec)
@@ -111,7 +111,7 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
                 b[end-2*m+i] = j # is already passed as negative l in x[i] >= l
             end
         end
-            
+        println(b)
         
     end
     return b
@@ -141,10 +141,6 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
             return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
         end 
     end
-    #= println("cones : ", solver.cones.cone_specs)
-    println(" Solver.variables.x : ", solver.variables.x)
-    println(" Solver.variables.z : ", solver.variables.z)
-    println(" Solver.variables.s : ", solver.variables.s)  =#
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
     solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, λ, prev_x, prev_z, prev_s,ldltS,debug_print)
@@ -180,6 +176,7 @@ function evaluate_constraint(solver,x)
     mul!(residual, solver.data.A, x, -1, 1)
     j = 1
     while j <= length(solver.data.b)
+        println(cone_specs, length(cone_specs))
         for i in eachindex(cone_specs)
             t = typeof(cone_specs[i])
             k = j:j+cone_specs[i].dim-1
@@ -189,8 +186,10 @@ function evaluate_constraint(solver,x)
                     return false
                 end
             elseif t == Clarabel.NonnegativeConeT
-                if minimum(residual[k])< 0
+                min = minimum(residual[k])
+                if ~(isapprox(min,0,atol=1e-4)) && min< 0 
                     return false
+                    
                 end
             end
             j = j+ cone_specs[i].dim
@@ -352,7 +351,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
-            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
+            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left, debug_print)
             println("Left node, solved for ũ: ", ũ)
             best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth, total_iter, fea_iter)
             push!(node_queue,left_node)
@@ -376,7 +375,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
-            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
+            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right, debug_print)
             println("Right node, solved for ū: ", ū)
             best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth, total_iter, fea_iter)
             push!(node_queue,right_node)
