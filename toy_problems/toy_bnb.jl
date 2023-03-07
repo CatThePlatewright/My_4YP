@@ -1,5 +1,5 @@
 using SparseArrays
-include("mixed_binary_solver.jl")
+include("../mixed_binary_solver.jl")
 
 
 function getClarabelData(model::Model)

@@ -167,7 +167,14 @@ function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start:
     return result
 end
 
-
+function evaluate_constraint_new(solver,x)
+    rz_inf = zeros(length(solver.data.b))
+     #Same as:  residuals.rz_inf .=  data.A * variables.x + variables.s , copied from residuals.jl in src code
+    rz_inf .= solver.variables.s
+    mul!(rz_inf, solver.data.A, solver.variables.x, one(T), one(T))
+    residuals = rz_inf - solver.data.b * solver.variables.τ
+    return norm(residuals,Inf) <= 1e-8
+end
 function evaluate_constraint(solver,x)  
     # TODO: check miOSQP code (this is the heuristics part)
     cone_specs = solver.cones.cone_specs
@@ -217,7 +224,7 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars,debug_print=false)
         println("rounded variables: ", x)
     end
 
-    if evaluate_constraint(solver,x)
+    if evaluate_constraint_new(solver,x)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
         println("Valid upper bound : ", obj_val," using feasible x: ", x)
         return obj_val, x

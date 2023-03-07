@@ -7,10 +7,13 @@ rcParams["pdf.fonttype"] = 42
 rcParams["ps.fonttype"] = 42
 color_set = ["red" "green" "orange" "black" "cyan"]
 marker_set = ["^" "s" "D" "x"]
-for n in [4,6,8]
-    with_iter = load(@sprintf("mpc_sparse_N=%d.jld",n),"with_iter")
-    without_iter = load(@sprintf("mpc_sparse_N=%d.jld",n), "without_iter")
-    first_iter_num = load(@sprintf("mpc_sparse_N=%d.jld",n), "first_iter_num")
+for n in [8]
+    with_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n),"with_iter")
+    without_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n), "without_iter")
+    first_iter_num = load(@sprintf("mimpc_iterations_N=%d.jld",n), "first_iter_num")
+    with_iter2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"with_iter")
+    without_iter2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"without_iter")
+    first_iter_num2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"first_iter_num")
 
 
     start_idx = 1
@@ -24,26 +27,35 @@ for n in [4,6,8]
             percentage[i] = 1.0
         end
     end
+    percentage2 = (with_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx]) ./(without_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx])
+    total_percentage2 = sum(with_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx]) / sum(without_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx])
+    for i = 1:lastindex(percentage2)
+        if isnan(percentage2[i])
+            percentage2[i] = 1.0
+        end
+    end
     PyPlot.clf()
     fig = figure()
 
 
     subplot(211)
-    
-    p1, = PyPlot.step(ind .- start_idx, without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], color= "black", label = "No early termination, cold start", marker = "o", markersize = 4, markevery = 1)
-    p2, = PyPlot.step(ind .- start_idx, with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], color= "red", label = "With early termination, cold start", marker = "x", markersize = 4, markevery = 1)
+    p1, = PyPlot.step(ind .- start_idx, without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], color= "black", label = "No early termination, cold start", markersize = 4, markevery = 1)
+    p2, = PyPlot.step(ind .- start_idx, with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], color= "red", label = "With early termination, cold start", markersize = 4, markevery = 1)
+    p3, = PyPlot.step(ind .- start_idx, without_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx], color= "grey", label = "No early termination, warm start", markersize = 4, markevery = 1)
+    p4, = PyPlot.step(ind .- start_idx, with_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx], color= "green", label = "With early termination, warm start", markersize = 4, markevery = 1)
 
     ylabel("# IPM iterations")
     xlim([0,100])
-    PyPlot.legend(handles = [p1, p2])
+    PyPlot.legend(handles = [p1, p2, p3,p4])
     subplot(212)
-    PyPlot.step(ind .- start_idx, ones(end_idx - start_idx + 1), color= "black", marker = "o", markersize = 4)
-    PyPlot.step(ind .- start_idx, percentage, color= "red",marker = "x", markersize = 4)
+    PyPlot.step(ind .- start_idx, ones(end_idx - start_idx + 1), color= "black", marker = "o", markersize = 2)
+    PyPlot.step(ind .- start_idx, percentage, color= "red",marker = "x", markersize = 2)
+    PyPlot.step(ind .- start_idx, percentage2, color= "green", marker = "^", markersize = 2)
 
     ylabel("Ratio")
     xlabel("Intervals")
     xlim([0,100])
-    savefig(@sprintf("plot_mpc_sparse_N=%d.pdf",n))
+    savefig(@sprintf("mpc_comparison_N=%d_warmcold.pdf",n))
 
 end
 # fn = plot(ind .- start_idx, [without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx]], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)
