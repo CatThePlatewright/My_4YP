@@ -16,7 +16,7 @@ min ...
 s.t. Ãx ≤ b̃ 
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
-N=4
+N=8
 # Formulation of MPC with state variables
 function generate_sparse_MPC_Clarabel(index=2400)
     adaptive_data = npzread(@sprintf("power_converter/results/adaptive_sparseMPC_N=%d.npz",N)) # we have N = 2,4,6,8,10,12
@@ -110,12 +110,12 @@ first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
 start_horizon = 2200
 end_horizon = 2300
+num_errors = 0
 for i = start_horizon:end_horizon
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub, i_idx= generate_sparse_MPC_Clarabel(i)
     n = length(q)
-    nu = length(lb)
-    println(length(i_idx))
+    Nnu = length(i_idx)
 
     model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "OutputFlag", 0)
@@ -131,14 +131,15 @@ for i = start_horizon:end_horizon
         Ib*x .<= ub
     end)
     optimize!(model)
-    uopt1 = value.(x)[end - nu + 1:end]
+    uopt1 = value.(x)[end - Nnu + 1:end]
     println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
     
     λ=0.99
-    η= 1e3  # 1e-3 result in no early termination at all
-    γ = 1e3
-    ϵ = 1e-8
+    η= 1e-4
+    γ = 100
     σ = 1e-7
+
+    ϵ = 1e-8
  
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
@@ -146,7 +147,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver, P, q, Ã, b̃,cones, settings)
     ldltS = factorize_optimization_based_matrix(solver.data,Ib,G,σ,η, γ)
     base_solution = Clarabel.solve!(solver)
-    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
+    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x[end - Nnu + 1:end])
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
@@ -156,10 +157,10 @@ for i = start_horizon:end_horizon
     
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Number of early terminated nodes: ", early_num)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
-    println("Gurobi base_solution: ", objective_value(model) , " using ", value.(model[:x])) 
+    println("Found objective: ", best_ub, " using ", round.(feasible_solution[end - Nnu + 1:end],digits=3))
+    println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
     println(" ")
-    diff_sol_vector= feasible_solution - value.(model[:x])
+    diff_sol_vector= feasible_solution[end - Nnu + 1:end] - uopt1
     diff_solution=round(norm(diff_sol_vector),digits=3)
     diff_obj = round(best_ub-objective_value(model),digits=6)
     if ~iszero(diff_solution) || ~iszero(diff_obj)
@@ -167,6 +168,7 @@ for i = start_horizon:end_horizon
         println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
         println("Horizon iteration number: ", i)
         error("Solutions differ!")
+        #num_errors = num_errors +1
     end
     
 

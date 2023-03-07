@@ -171,8 +171,9 @@ function evaluate_constraint_new(solver,x)
     rz_inf = zeros(length(solver.data.b))
      #Same as:  residuals.rz_inf .=  data.A * variables.x + variables.s , copied from residuals.jl in src code
     rz_inf .= solver.variables.s
-    mul!(rz_inf, solver.data.A, solver.variables.x, one(T), one(T))
-    residuals = rz_inf - solver.data.b * solver.variables.τ
+    mul!(rz_inf, solver.data.A, solver.variables.x, 1, 1)
+    println(solver.variables.τ)
+    residuals = (rz_inf - solver.data.b*solver.variables.τ) * inv(solver.variables.τ)
     return norm(residuals,Inf) <= 1e-8
 end
 function evaluate_constraint(solver,x)  
@@ -208,7 +209,7 @@ end
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(solver,n::Int, integer_vars,relaxed_vars,debug_print=false)
+function compute_ub(solver,n::Int,integer_vars,relaxed_vars,debug_print=false)
     # set the relaxed_vars / lb result equal to the rounded binary values
     # if these are in the set of binary variables   
     if isinf(relaxed_vars[1])
@@ -224,9 +225,9 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars,debug_print=false)
         println("rounded variables: ", x)
     end
 
-    if evaluate_constraint_new(solver,x)
+    if evaluate_constraint(solver,x)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
-        println("Valid upper bound : ", obj_val," using feasible x: ", x)
+        println("Valid upper bound : ", obj_val," using integer feasible u: ", x[end - length(integer_vars) + 1:end])
         return obj_val, x
     else 
         println("Infeasible or unbounded problem for ub computation")
@@ -293,7 +294,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
     fea_iter = 0
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
-        println("Solution x of unbounded base model: ", base_solution.x)
+        println("Integer solution u of unbounded base model: ", base_solution.x[end - length(integer_vars) + 1:end])
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
         best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
         # this is our root node of the binarytree

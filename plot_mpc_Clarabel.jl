@@ -8,13 +8,12 @@ rcParams["ps.fonttype"] = 42
 color_set = ["red" "green" "orange" "black" "cyan"]
 marker_set = ["^" "s" "D" "x"]
 for n in [8]
-    with_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n),"with_iter")
-    without_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n), "without_iter")
-    first_iter_num = load(@sprintf("mimpc_iterations_N=%d.jld",n), "first_iter_num")
-    with_iter2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"with_iter")
-    without_iter2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"without_iter")
-    first_iter_num2 = load(@sprintf("mimpc_iterations_N=%d_λ=0.99.jld",n),"first_iter_num")
-
+    with_iter = load(@sprintf("mpc_sparse_N=%d.jld",n),"with_iter")
+    without_iter = load(@sprintf("mpc_sparse_N=%d.jld",n), "without_iter")
+    first_iter_num = load(@sprintf("mpc_sparse_N=%d.jld",n), "first_iter_num")
+    with_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"with_iter")
+    without_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"without_iter")
+    first_iter_num2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"first_iter_num")
 
     start_idx = 1
     end_idx = 100
@@ -55,7 +54,7 @@ for n in [8]
     ylabel("Ratio")
     xlabel("Intervals")
     xlim([0,100])
-    savefig(@sprintf("mpc_comparison_N=%d_warmcold.pdf",n))
+    savefig(@sprintf("mpc_comparison_N=%d.pdf",n))
 
 end
 # fn = plot(ind .- start_idx, [without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx]], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)
