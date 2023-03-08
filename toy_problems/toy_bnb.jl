@@ -130,35 +130,33 @@ end
 
 function evaluate_constraint(solver,x)  
     # TODO: check miOSQP code (this is the heuristics part)
+    s = zeros(length(solver.data.b))
+    #Same as:  residuals.rz_inf .=  data.b - data.A * variables.x 
+    s .= solver.data.b
+    mul!(s, solver.data.A, x, -1, 1) 
+    printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
+
     cone_specs = solver.cones.cone_specs
-    residual = zeros(length(solver.data.b))
-    residual .= solver.data.b
-    mul!(residual, solver.data.A, x, -1, 1)
+    println(cone_specs, length(cone_specs))
     j = 1
     while j <= length(solver.data.b)
         for i in eachindex(cone_specs)
             t = typeof(cone_specs[i])
             k = j:j+cone_specs[i].dim-1
-            
-            if t == Clarabel.ZeroConeT
-                println("Evaluating ", residual[k], " == 0 ?")
-                if ~all(isapprox.(residual[k],0,atol = 1e-3))
+            if t == Clarabel.ZeroConeT 
+                # should all be 0 by above construction
+                if ~all(isapprox.(s[k],0,atol = 1e-7))
+                    println("ZeroConeT constraint not satisfied for s[k]: ",s[k])
                     return false
                 end
-                
-            
-            elseif t == Clarabel.NonnegativeConeT
-                println("Evaluating ", residual[k], ">= 0 ?")
-                min = minimum(residual[k])
-                if ~(isapprox(min,0,atol=1e-4)) && min< 0 
+            else
+                z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
+                if isapprox(z̃,0,atol=1e-7) < 0 
+                    println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ",s[k])
                     return false
-                    
                 end
-
             end
             j = j+ cone_specs[i].dim
-            
-
         end 
     end
     return true

@@ -16,7 +16,7 @@ min ...
 s.t. Ãx ≤ b̃ 
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
-N=8
+N=6
 # Formulation of MPC with state variables
 function generate_sparse_MPC_Clarabel(index=2400)
     adaptive_data = npzread(@sprintf("power_converter/results/adaptive_sparseMPC_N=%d.npz",N)) # we have N = 2,4,6,8,10,12
@@ -152,7 +152,7 @@ for i = start_horizon:end_horizon
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,true,false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter = branch_and_bound_solve(i, solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,true,false) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -179,7 +179,7 @@ for i = start_horizon:end_horizon
     Clarabel.setup!(solver_without, P, q, Ã, b̃,cones, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(solver_without, base_solution_without,n,ϵ, i_idx, true, false, true,λ,ldltS,false,false) 
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without = branch_and_bound_solve(i,solver_without, base_solution_without,n,ϵ, i_idx, true, false, true,λ,ldltS,false,false) 
     println("Found objective without early_term: ", best_ub_without)
     println("Number of early terminated nodes (without): ", early_num_without)
     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)

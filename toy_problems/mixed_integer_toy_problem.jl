@@ -22,7 +22,7 @@ function getData(n,sum_of_bin_vars)
     set_binary.(y)
 
     @objective(exact_model, Min, x'*Q*x + c'*x)
-    @constraint(exact_model, sum_constraint, sum(y) == sum_of_bin_vars)
+    @constraint(exact_model, sum_constraint, sum(y) <= sum_of_bin_vars)
     @constraint(exact_model, x.<=10*y)
     @constraint(exact_model, -10*y .<= x)
     optimize!(exact_model)
@@ -36,7 +36,7 @@ function getData(n,sum_of_bin_vars)
     x = z[1:n]
     y= z[n+1:m]
     @objective(model, Min, x'*Q*x + c'*x)
-    @constraint(model, sum_constraint, sum(y) == sum_of_bin_vars)
+    @constraint(model, sum_constraint, sum(y) <= sum_of_bin_vars)
     @constraint(model,lbx, -10*y .<= x)
     @constraint(model, lby, -y.<= -zeros(n)) # using >= will swap the order in A and b s.t. lby comes before lbx!
     @constraint(model,ubx, x.<=10*y)

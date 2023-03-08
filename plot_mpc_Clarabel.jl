@@ -7,14 +7,20 @@ rcParams["pdf.fonttype"] = 42
 rcParams["ps.fonttype"] = 42
 color_set = ["red" "green" "orange" "black" "cyan"]
 marker_set = ["^" "s" "D" "x"]
-for n in [8]
+for n in [6,8]
     with_iter = load(@sprintf("mpc_sparse_N=%d.jld",n),"with_iter")
     without_iter = load(@sprintf("mpc_sparse_N=%d.jld",n), "without_iter")
     first_iter_num = load(@sprintf("mpc_sparse_N=%d.jld",n), "first_iter_num")
     with_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"with_iter")
     without_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"without_iter")
-    first_iter_num2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"first_iter_num")
-
+    first_iter_num2 = load(@sprintf("mpc_sparse_N=%d_warmstart.jld",n),"first_iter_num") 
+   
+    #= with_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n),"with_iter")
+    without_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n), "without_iter")
+    first_iter_num = load(@sprintf("mimpc_iterations_N=%d.jld",n), "first_iter_num")
+    with_iter2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"with_iter")
+    without_iter2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"without_iter")
+    first_iter_num2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"first_iter_num") =#
     start_idx = 1
     end_idx = 100
     ind = start_idx:end_idx
@@ -27,7 +33,6 @@ for n in [8]
         end
     end
     percentage2 = (with_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx]) ./(without_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx])
-    total_percentage2 = sum(with_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx]) / sum(without_iter2[start_idx:end_idx] .- first_iter_num2[start_idx:end_idx])
     for i = 1:lastindex(percentage2)
         if isnan(percentage2[i])
             percentage2[i] = 1.0
@@ -47,14 +52,14 @@ for n in [8]
     xlim([0,100])
     PyPlot.legend(handles = [p1, p2, p3,p4])
     subplot(212)
-    PyPlot.step(ind .- start_idx, ones(end_idx - start_idx + 1), color= "black", marker = "o", markersize = 2)
-    PyPlot.step(ind .- start_idx, percentage, color= "red",marker = "x", markersize = 2)
-    PyPlot.step(ind .- start_idx, percentage2, color= "green", marker = "^", markersize = 2)
+    PyPlot.step(ind .- start_idx, ones(end_idx - start_idx + 1), color= "black")
+    PyPlot.step(ind .- start_idx, percentage, color= "red")
+    PyPlot.step(ind .- start_idx, percentage2, color= "green")
 
     ylabel("Ratio")
     xlabel("Intervals")
     xlim([0,100])
-    savefig(@sprintf("mpc_comparison_N=%d.pdf",n))
+    savefig(@sprintf("mpc_sparse_N=%d_warmcold.pdf",n))
 
 end
 # fn = plot(ind .- start_idx, [without_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx], with_iter[start_idx:end_idx] .- first_iter_num[start_idx:end_idx]], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)

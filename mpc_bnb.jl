@@ -167,37 +167,41 @@ function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start:
     return result
 end
 
-function evaluate_constraint_new(solver,x)
-    rz_inf = zeros(length(solver.data.b))
-     #Same as:  residuals.rz_inf .=  data.A * variables.x + variables.s , copied from residuals.jl in src code
-    rz_inf .= solver.variables.s
-    mul!(rz_inf, solver.data.A, solver.variables.x, 1, 1)
-    println(solver.variables.τ)
-    residuals = (rz_inf - solver.data.b*solver.variables.τ) * inv(solver.variables.τ)
-    return norm(residuals,Inf) <= 1e-8
-end
-function evaluate_constraint(solver,x)  
-    # TODO: check miOSQP code (this is the heuristics part)
+function evaluate_constraint_mpc(solver,x, integer_vars)
+    g_width = solver.cones.cone_specs[1].dim # first elements of Ax+s=b encode Gx==h
+    G = solver.data.A[1:g_width,:] 
+    numel_states = length(x)-length(integer_vars)
+    Gx = G[:,1:end-length(integer_vars)] # entries corresponding to continuous state vars
+    if size(Gx)[1] != size(Gx)[2]
+        error("Gx is not square!")
+    end
+    Gu = G[:,end - length(integer_vars) + 1:end] # entries corresponding to discrete input vars
+    # fix up the continuous vars (x) to satisfy equality constraint (state dynamics)
+    x[1:end-length(integer_vars)] .= inv(Matrix(Gx))*(solver.data.b[1:g_width] - Gu*x[end - length(integer_vars) + 1:end])
+    s = zeros(length(solver.data.b))
+     #Same as:  residuals.rz_inf .=  data.b - data.A * variables.x 
+    s .= solver.data.b
+    mul!(s, solver.data.A, x, -1, 1) 
+    printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
+
     cone_specs = solver.cones.cone_specs
-    residual = zeros(length(solver.data.b))
-    residual .= solver.data.b
-    mul!(residual, solver.data.A, x, -1, 1)
+    println(cone_specs, length(cone_specs))
     j = 1
     while j <= length(solver.data.b)
-        println(cone_specs, length(cone_specs))
         for i in eachindex(cone_specs)
             t = typeof(cone_specs[i])
             k = j:j+cone_specs[i].dim-1
-            
-            if t == Clarabel.ZeroConeT
-                if ~all(isapprox.(residual[k],0,atol = 1e-3))
+            if t == Clarabel.ZeroConeT 
+                # should all be 0 by above construction
+                if ~all(isapprox.(s[k],0,atol = 1e-7))
+                    println("ZeroConeT constraint not satisfied for s[k]: ",s[k])
                     return false
                 end
-            elseif t == Clarabel.NonnegativeConeT
-                min = minimum(residual[k])
-                if ~(isapprox(min,0,atol=1e-4)) && min< 0 
+            else
+                z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
+                if isapprox(z̃,0,atol=1e-7) < 0 
+                    println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ",s[k])
                     return false
-                    
                 end
             end
             j = j+ cone_specs[i].dim
@@ -222,10 +226,10 @@ function compute_ub(solver,n::Int,integer_vars,relaxed_vars,debug_print=false)
         x[i] = round(relaxed_vars[i]) 
     end
     if debug_print
-        println("rounded variables: ", x)
+        println("rounded variables: ", x[end - length(integer_vars) + 1:end])
     end
 
-    if evaluate_constraint(solver,x)
+    if evaluate_constraint_mpc(solver,x,integer_vars)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
         println("Valid upper bound : ", obj_val," using integer feasible u: ", x[end - length(integer_vars) + 1:end])
         return obj_val, x
@@ -283,7 +287,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
     end
 end
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,ldltS = Nothing, debug_print::Bool = true, dom_prog_enable::Bool=false)
+function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,ldltS = Nothing, debug_print::Bool = true, dom_prog_enable::Bool=false)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -325,7 +329,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
         if debug_print
-            println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
+            println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x[end - length(integer_vars) + 1:end])
         end
         
         #IMPORTANT: the x should NOT change after solving in compute_lb or compute_ub -> use broadcasting
@@ -335,6 +339,10 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         end
         # heuristic guessing for fractional solution: which edge to split along i.e. which variable to fix next? 
         fixed_x_index = pick_index(x, integer_vars, node.data.fixed_x_ind, debug_print) 
+        if fixed_x_index == -1
+            println("no remaining_branching_vars left at horizon ", horizon_i)
+            error("stop")
+        end
         if debug_print
             println("GOT BRANCHING VARIABLE: ", fixed_x_index, " SET SMALLER THAN FLOOR (left): ", floor(x[fixed_x_index]), " OR GREATER THAN CEIL (right)", ceil(x[fixed_x_index]))
         end

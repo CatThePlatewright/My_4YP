@@ -164,6 +164,7 @@ function pick_index(x, integer_vars, fixed_x_indices, debug_print)
     @assert issorted(integer_vars)
     remaining_branching_vars = setdiff(integer_vars, fixed_x_indices)
     if isempty(remaining_branching_vars)
+        #return -1
         error("empty set remaining_branching_vars! should not happen, check ub-lb < ϵ")
     end
     frac_part = broadcast(v -> abs(v - round(v)), x[remaining_branching_vars])
