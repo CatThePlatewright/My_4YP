@@ -66,7 +66,7 @@ total_nodes_without_num = Int64[]
 percentage_iter_reduction = Float64[]
 
 for n in n_range
-    k= Int(floor(n/4))
+    k= 2
     P,q,A,b, s, binary_vars, exact_model= getData(n,k)
     simple_domain_propagation!(b,k)
     println("Domain propagated b: ", b)
@@ -76,7 +76,7 @@ for n in n_range
 
     Clarabel.setup!(solver, P, q, A, b, s, settings)
 
-    result = Clarabel.solve!(solver, Inf)
+    result = Clarabel.solve!(solver)
 
 
     #start bnb loop

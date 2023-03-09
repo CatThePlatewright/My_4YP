@@ -122,7 +122,7 @@ end
 function solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start::Bool, λ, prev_x, prev_z, prev_s)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
     #reset_solver!(solver) 
-    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, true, λ, prev_x, prev_z, prev_s)
+    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, nothing, true, λ, prev_x, prev_z, prev_s)
 
     return result
 end
@@ -151,7 +151,7 @@ function evaluate_constraint(solver,x)
                 end
             else
                 z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
-                if isapprox(z̃,0,atol=1e-7) < 0 
+                if round(z̃,digits=7) < 0 
                     println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ",s[k])
                     return false
                 end

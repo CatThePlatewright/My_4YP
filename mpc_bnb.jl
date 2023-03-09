@@ -199,7 +199,7 @@ function evaluate_constraint_mpc(solver,x, integer_vars)
                 end
             else
                 z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
-                if isapprox(z̃,0,atol=1e-7) < 0 
+                if round(z̃,digits=7) < 0 
                     println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ",s[k])
                     return false
                 end

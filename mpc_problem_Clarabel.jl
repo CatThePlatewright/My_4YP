@@ -16,7 +16,7 @@ min ...
 s.t. Ãx ≤ b̃ 
 where Ã = [A -A -I I]' and b̃ = [u -l -lx ux]'
 """
-N=6
+N=8
 # Formulation of MPC with state variables
 function generate_sparse_MPC_Clarabel(index=2400)
     adaptive_data = npzread(@sprintf("power_converter/results/adaptive_sparseMPC_N=%d.npz",N)) # we have N = 2,4,6,8,10,12
@@ -135,8 +135,8 @@ for i = start_horizon:end_horizon
     println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
     
     λ=0.99
-    η= 1e-4
-    γ = 100
+    η= 1000
+    γ = 1000
     σ = 1e-7
 
     ϵ = 1e-8
@@ -194,7 +194,7 @@ for i = start_horizon:end_horizon
 
     println(" ") 
 end
-save((@sprintf("mpc_sparse_N=%d_warmstart.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
+save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction)
 
  #=   
  

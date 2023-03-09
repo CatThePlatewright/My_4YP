@@ -113,7 +113,6 @@ total_num = 3*N+L
 T = 2000 # end of period (how many days to consider / rows in data sheet)
 R = get_return_data(N,T)# return rates
 Λ = calc_variance(N, R)
-ρ_values = 1:5# SOC constraint for risk return
 H = get_sector_asset_matrix()
 binary_vars = collect(2*N+1:3*N+L) # indices of binary variables
 without_iter_num = Int64[]
@@ -125,15 +124,15 @@ total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
 V0 = 10000
-ρ_values = [1]# SOC constraint for risk return
-ρ_values_str = ["1.00"]
+ρ_values = [1000]# SOC constraint for risk return
+ρ_values_str = ["1000"]
 
 
-#=for i in 1:lastindex(ρ_values)
+for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     r = (1/T)*ones(1,T)*R
-    exact_model, exact_solution = solveGurobi(ρ,r)
-    P,q,A,b, s, binary_vars= getData(ρ,r)
+    exact_model, exact_solution = solveGurobi(ρ,r,Λ)
+    P,q,A,b, s, binary_vars= getData(ρ,r,Λ)
     println("Setting up Clarabel solver...")
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
     solver   = Clarabel.Solver()
@@ -149,6 +148,10 @@ V0 = 10000
 
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+    x_plus = feasible_solution[1:N]
+    x_minus = feasible_solution[N+1:2*N]
+    r_solution = R*(x_plus-x_minus) 
+    println(r_solution)
     diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
     diff_solution=round(norm(diff_sol_vector),digits=4)
     diff_obj = round(best_ub-objective_value(exact_model),digits=4) # digits=5 resulted in one different solution by 2.0e-5
@@ -159,17 +162,15 @@ V0 = 10000
         error("Solutions differ!")
     end
     
-    x_plus = feasible_solution[1:N]
-    x_minus = feasible_solution[N+1:2*N]
-    r_solution = R*(x_plus-x_minus) 
-    portfolio_value = V0.*cumprod(r_solution.+1)
-    println(size(portfolio_value))
-    save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value)
+    
+    #portfolio_value = V0.*cumprod(r_solution.+1)
+
+   #save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value)
 
     
-end=#
+end
 
-for i in 1:lastindex(ρ_values)
+#= for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     for t in 1000:2000
         R = get_return_data(N,t) # return rates
@@ -231,8 +232,8 @@ for i in 1:lastindex(ρ_values)
             append!(first_iter_num, fea_iter)
         end  
     end
-    save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+    #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
-end
+end =#
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
