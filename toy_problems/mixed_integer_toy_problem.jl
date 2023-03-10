@@ -55,7 +55,7 @@ function getData(n,sum_of_bin_vars)
     
 end
 
-n_range =2:12
+n_range =2:25
 λ = 0.99
 ϵ = 1e-6
 without_iter_num = Int64[]
@@ -66,7 +66,7 @@ total_nodes_without_num = Int64[]
 percentage_iter_reduction = Float64[]
 
 for n in n_range
-    k= 2
+    k= n÷4 # integer division
     P,q,A,b, s, binary_vars, exact_model= getData(n,k)
     simple_domain_propagation!(b,k)
     println("Domain propagated b: ", b)

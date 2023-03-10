@@ -10,7 +10,7 @@ function create_variables(model,N,L)
 end
 function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
 
-    @constraint(model, cost_constraint, [1+ρ; [sqrt(Λ)*(model[:xplus]+model[:xminus]); ρ-1]] in SecondOrderCone()) 
+    @constraint(model, cost_constraint, [1+ρ; [sqrt(Λ)*(model[:xplus]-model[:xminus]); 1-ρ]] in SecondOrderCone()) 
     # sum constraints
     @constraint(model, sum_investments, sum(model[:xplus]-model[:xminus]) == M)
     @constraint(model, sum_number_investments, sum(model[:bin]) <= K)
@@ -100,11 +100,15 @@ function getData(ρ,r,Λ)
     return P,q,A,b,cones, binary_vars
     
 end
+# Cumulative portfolo value over time
+function portfolio_V(V_0, r)
+    return V_0 * cumprod(1 .+ r,dims=1)
+end 
 
 N = 20 # 20 is max. number of assets
-L = 3 
+L = 3
 M = 1.0 # total investement (money)
-K = N/2 # maximum number of investments (sum of bin vars)
+K = 2 # maximum number of investments (sum of bin vars)
 Lmin = 1
 Lmax = L
 λ = 0.99
@@ -124,9 +128,11 @@ total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
 V0 = 10000
-ρ_values = [1000]# SOC constraint for risk return
-ρ_values_str = ["1000"]
-
+ρ_values = [1]# SOC constraint for risk return
+ρ_values_str = ["1"]
+#= w = zeros(20,1)
+w[20]=1.0
+r=R*w =#
 
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
@@ -140,7 +146,7 @@ for i in 1:lastindex(ρ_values)
     Clarabel.setup!(solver, P, q, A, b, s, settings)
 
     result = Clarabel.solve!(solver, Inf)
-    println(result)
+    #println(result)
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
@@ -151,7 +157,6 @@ for i in 1:lastindex(ρ_values)
     x_plus = feasible_solution[1:N]
     x_minus = feasible_solution[N+1:2*N]
     r_solution = R*(x_plus-x_minus) 
-    println(r_solution)
     diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
     diff_solution=round(norm(diff_sol_vector),digits=4)
     diff_obj = round(best_ub-objective_value(exact_model),digits=4) # digits=5 resulted in one different solution by 2.0e-5
@@ -162,17 +167,16 @@ for i in 1:lastindex(ρ_values)
         error("Solutions differ!")
     end
     
-    
-    #portfolio_value = V0.*cumprod(r_solution.+1)
+    portfolio_value = portfolio_V(V0,r_solution)
 
-   #save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value)
+    save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
 
     
 end
 
-#= for i in 1:lastindex(ρ_values)
+for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
-    for t in 1000:2000
+    for t in 1000:1200
         R = get_return_data(N,t) # return rates
         Λ = calc_variance(N, R)
         r = (1/t)*ones(1,t)*R
@@ -232,8 +236,8 @@ end
             append!(first_iter_num, fea_iter)
         end  
     end
-    #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+    save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
-end =#
+end 
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)

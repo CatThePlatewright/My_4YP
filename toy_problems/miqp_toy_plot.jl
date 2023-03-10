@@ -6,7 +6,7 @@ using Printf
 
 
 k_list = [0.50,0.25]
-ind = 2:12
+ind = 2:25
 
 PyPlot.clf()
 rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
@@ -24,7 +24,8 @@ for i in 1:lastindex(k_list)
     first_iter_num = load(@sprintf("MIQP_toy_k=%1.2f.jld",k_list[i]),"first_iter_num") 
     total_nodes = load(@sprintf("MIQP_toy_k=%1.2f.jld",k_list[i]),"total_nodes")
     total_nodes_without = load(@sprintf("MIQP_toy_k=%1.2f.jld",k_list[i]),"total_nodes_without")
-    println(total_nodes)
+    println(first_iter_num)
+    println("with_iter", with_iter)
     with_iter =(with_iter .- first_iter_num)./total_nodes
     without_iter = (without_iter .- first_iter_num)./total_nodes_without
     percentage = (with_iter)./(without_iter)
@@ -36,18 +37,18 @@ for i in 1:lastindex(k_list)
     end
     subplot(211)
     p1, = PyPlot.step(ind , without_iter, linestyle="dashed",color= color_set[i],  marker = marker_set[i], markersize = 4, markevery = 1)
-    p2, = PyPlot.step(ind, with_iter, color= color_set[i], label=@sprintf("k= %1.2f*n",k_list[i]), marker = marker_set[i], markersize = 4, markevery = 1)
+    p2, = PyPlot.step(ind, with_iter, color= color_set[i], label=@sprintf("k= floor(%1.2f*n)",k_list[i]), marker = marker_set[i], markersize = 4, markevery = 1)
     annotate("Dashed - No early termination",(2.4,6))
     annotate("Solid - With early termination",(2.4,5))
     ylabel("# IPM iterations (average per node)")
-    xlim([2,12])
+    xlim([2,25])
     push!(handles,p2)
     subplot(212)
 
     PyPlot.step(ind, percentage, color= color_set[i], marker = marker_set[i], markersize = 4)
     ylabel("Ratio")
     xlabel("Number of x variables (n)")
-    xlim([2,12])
+    xlim([2,25])
 end
 PyPlot.legend(handles=handles)
 

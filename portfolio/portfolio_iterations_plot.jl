@@ -12,11 +12,11 @@ fig = figure()
 color_set = ["green", "orange", "black","cyan","red"]
 marker_set = ["^" "s" "D" "x"]
 
-with_iter = load("portfolio_iterations_1.00.jld","with_iter")
-without_iter = load("portfolio_iterations_1.00.jld","without_iter")
-first_iter_num = load("portfolio_iterations_1.00.jld","first_iter_num") 
-total_nodes = load("portfolio_iterations_1.00.jld","total_nodes")
-total_nodes_without = load("portfolio_iterations_1.00.jld","total_nodes_without")
+with_iter = load("portfolio_iterations_1.jld","with_iter")
+without_iter = load("portfolio_iterations_1.jld","without_iter")
+first_iter_num = load("portfolio_iterations_1.jld","first_iter_num") 
+total_nodes = load("portfolio_iterations_1.jld","total_nodes")
+total_nodes_without = load("portfolio_iterations_1.jld","total_nodes_without")
 println(length(total_nodes))
 ind = 1000:(1000+lastindex(with_iter)-1)
 with_iter =(with_iter .- first_iter_num)
@@ -44,7 +44,7 @@ ylabel("Ratio")
 xlabel("Days")
 xlim([1000,1000+ lastindex(with_iter)-1])
 
-savefig("portfolio_iterations_plot.pdf")
+savefig("portfolio_early_termination.pdf")
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
 
 # fn = plot(ind .- start_idx, [without_iter5 .- first_iter_num5, with_iter5 .- first_iter_num5], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)
