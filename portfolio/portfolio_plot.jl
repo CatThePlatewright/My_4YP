@@ -4,6 +4,7 @@ using Printf
 
 
 ρ_values_str = ["1e-7", "1e-3",  "1e-1", "1","10","100"]
+ρ_values_str = ["1"]
 
 T = 2000
 PyPlot.clf()

@@ -7,28 +7,24 @@ last constraint in A and b encode the SOC constraint, not the upper bounds
 1(for ρ+1)+ N (number of assets) + 1 (for 1-ρ) = N+2 rows.
 Note that n in this function denotes the TOTAL number of vars so 3*N+L"""
 function add_branching_constraint_new(b::Vector, n::Int, N::Int,fixed_x_indices, fix_values, upper_or_lower_vec)   
-    
-    println("Fixed x index: ",fixed_x_indices)
     if ~isnothing(fixed_x_indices) && ~isnothing(fix_values)
         for (i,j,k) in zip(fixed_x_indices, fix_values, upper_or_lower_vec)
             if k == 1
-                println("set upper bound for index: ", i," to ", j)
+                #println("set upper bound for index: ", i," to ", j)
                 b[end-2-N-n+i] = j
 
             elseif k == -1
-                println("set lower bound for index: ", i," to ", -j)
+                #println("set lower bound for index: ", i," to ", -j)
                 b[end-2-N-2*n+i] = j 
             end
         end
             
-        println("Updated b: ",b)
     end
     return b
 end
 function reset_b_vector(b::Vector,N::Int, L::Int)
     b[end-2-5*N-2*L+1:end-2-4*N-L] = zeros(N+L)
     b[end-2-2*N-L+1:end-2-N] = ones(N+L)
-    println("Reset b: ", b)
 end
 
 function solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start::Bool, N, λ,  prev_x, prev_z, prev_s)
@@ -90,6 +86,7 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         push!(node_queue,node)
         iteration = 0
         total_nodes += 1
+        fea_nodes = 1
         x = zeros(n)
     end
     
@@ -110,8 +107,8 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         if best_ub - node.data.lb <= ϵ
             break
         end
-        printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
-        println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
+        printstyled("Best ub: ", best_ub, " with feasible solution : ", round.(best_feasible_solution,digits=2),"\n",color= :green)
+        #println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
 
         #IMPORTANT: the x should NOT change after solving in compute_lb_new or compute_ub -> use broadcasting
         x .= node.data.solution_x
@@ -144,7 +141,7 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         if ~left_node.data.is_pruned
             ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
             println("Left node, solved for ũ: ", ũ)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter, total_nodes,fea_nodes)
             push!(node_queue,left_node)
         end
         #println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
@@ -166,7 +163,7 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         if ~right_node.data.is_pruned
             ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
             println("Right node, solved for ū: ", ū)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
             push!(node_queue,right_node)
         end
         #println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        

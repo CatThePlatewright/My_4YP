@@ -146,13 +146,13 @@ function evaluate_constraint(solver,x)
             if t == Clarabel.ZeroConeT 
                 # should all be 0 by above construction
                 if ~all(isapprox.(s[k],0,atol = 1e-7))
-                    println("ZeroConeT constraint not satisfied for s[k]: ",s[k])
+                    println("ZeroConeT constraint not satisfied for s[k]: ")
                     return false
                 end
             else
                 z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
                 if round(z̃,digits=7) < 0 
-                    println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ",s[k])
+                    println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ")
                     return false
                 end
             end
@@ -177,7 +177,7 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
     for i in integer_vars
         x[i] = round(relaxed_vars[i],digits=0) 
     end
-    println("rounded variables: ", x)
+    println("rounded integer variables: ", x[integer_vars])
 
     if evaluate_constraint(solver,x)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
@@ -199,16 +199,17 @@ function check_lb_pruning(node, best_ub)
     return false
 end
 
-function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,total_iter::Int, fea_iter::Int)
+function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,total_iter::Int, fea_iter::Int, total_nodes::Int,fea_nodes::Int)
     if (u < best_ub) # this only happens if node is not pruned
         if isinf(best_ub)
             fea_iter = total_iter
+            fea_nodes = total_nodes
         end
         best_ub = u
-        println("FOUND BETTER UB AT DEPTH ", depth)
+        printstyled("FOUND BETTER UB AT DEPTH ", depth,"\n", color = :green)
         best_feasible_solution = feasible_solution
     end
-    return best_ub, best_feasible_solution, fea_iter
+    return best_ub, best_feasible_solution, fea_iter, fea_nodes
 end
 #select a leaf from leaves for computing
 function select_leaf(node_queue::Vector{BnbNode}, best_ub)
@@ -257,6 +258,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         push!(node_queue,node)
         iteration = 0
         total_nodes = 1
+        fea_nodes = 1
         x = zeros(n)
     end
     
@@ -311,7 +313,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if ~left_node.data.is_pruned
             ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
             println("Left node, solved for ũ: ", ũ)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
             push!(node_queue,left_node)
         end
         #println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
@@ -333,7 +335,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if ~right_node.data.is_pruned
             ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
             println("Right node, solved for ū: ", ū)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
             push!(node_queue,right_node)
         end
         #println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
@@ -349,5 +351,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         iteration += 1
         println("iteration : ", iteration)
     end
-    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, total_nodes
+    net_nodes = total_nodes-fea_nodes # counting number of nodes since finding first integer feasible solution, just as with total_iter-fea_iter
+    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, net_nodes
 end

@@ -66,7 +66,7 @@ total_nodes_without_num = Int64[]
 percentage_iter_reduction = Float64[]
 
 for n in n_range
-    k= n÷4 # integer division
+    k= n÷2 # integer division
     P,q,A,b, s, binary_vars, exact_model= getData(n,k)
     simple_domain_propagation!(b,k)
     println("Domain propagated b: ", b)
@@ -81,7 +81,7 @@ for n in n_range
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
- 
+ #Note: total nodes is already net number since finding first integer feasible solution
     best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,2*n,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
@@ -122,4 +122,4 @@ end
 
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
-save("MIQP_toy_k=0.25.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+save("MIQP_toy_k=0.5.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)

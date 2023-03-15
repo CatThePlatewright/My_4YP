@@ -36,7 +36,7 @@ function getData(n,m,k)
 end
 
 n_range =2:20
-k=10
+k=3
 λ = 0.99
 ϵ = 1e-6
 without_iter_num = Int64[]
@@ -62,7 +62,7 @@ for n in n_range
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
- 
+    # note that total_nodes is already net number of nodes visited since finding first feasible solution
     best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,n,ϵ, integer_vars,true,true,false,λ) 
     println("Termination status of Clarabel solver:" , solver.info.status)
     println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
@@ -104,4 +104,4 @@ end
 
 
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
-save("my_toy_k=10.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+save("my_toy_k=3.jld", "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)

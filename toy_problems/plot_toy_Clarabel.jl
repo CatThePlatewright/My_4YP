@@ -62,7 +62,7 @@ for i in 1:lastindex(k_list)
 end
 PyPlot.legend(handles=handles)
 
-savefig("toy_problem_3k_new.pdf")
+savefig("toy_problem_3k.pdf")
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
 
 # fn = plot(ind .- start_idx, [without_iter5 .- first_iter_num5, with_iter5 .- first_iter_num5], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)

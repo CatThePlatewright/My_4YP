@@ -88,6 +88,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         push!(node_queue,node)
         iteration = 0
         total_nodes += 1
+        fea_nodes = 1
         x = zeros(n)
     end
     
@@ -142,7 +143,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if ~left_node.data.is_pruned
             ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
             println("Left node, solved for ũ: ", ũ)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter, fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
             push!(node_queue,left_node)
         end
         #println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
@@ -164,7 +165,7 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         if ~right_node.data.is_pruned
             ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
             println("Right node, solved for ū: ", ū)
-            best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter)
+            best_ub, best_feasible_solution, fea_iter, fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
             push!(node_queue,right_node)
         end
         #println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
@@ -180,6 +181,6 @@ function branch_and_bound_solve(solver, base_solution, n, ϵ, integer_vars=colle
         iteration += 1
         println("iteration : ", iteration)
     end
-    
-    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, total_nodes
+    net_nodes = total_nodes-fea_nodes
+    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, net_nodes
 end

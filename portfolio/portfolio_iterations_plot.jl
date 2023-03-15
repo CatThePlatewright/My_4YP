@@ -44,7 +44,7 @@ ylabel("Ratio")
 xlabel("Days")
 xlim([1000,1000+ lastindex(with_iter)-1])
 
-savefig("portfolio_early_termination.pdf")
+savefig("portfolio_early_termination_K=10.pdf")
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
 
 # fn = plot(ind .- start_idx, [without_iter5 .- first_iter_num5, with_iter5 .- first_iter_num5], label = ["No early termination" "With early termination"], ylabel = "# QP iterations", marker = [:c :d], markershape = :auto, markersize = 2, seriestype=:step, linewidth = 1, color = [:black :orange], fmt = :eps)

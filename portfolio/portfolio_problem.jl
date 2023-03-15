@@ -41,6 +41,11 @@ function calc_variance(N::Int, R::Matrix)
             Λ[i,j] = cov(R[:,i], R[:,j]) # average over the time frame day 0 to day 2516
         end
     end
+    E,U = eigen(Λ)
+    println("eigenvalues: ",E)
+    println(minimum(E))
+    println(maximum(E))
+    error("stop")
     return Λ
 end
 
@@ -58,8 +63,12 @@ function get_return_data(N::Int, T::Int)
     end
     return R
 end
-function get_sector_asset_matrix()
-    asset2sector = [1,1,1,3,2,3,2,1,3,3,2,2,3,2,3,2,1,2,1,1]
+function get_sector_asset_matrix(L::Int)
+    if L == 3
+        asset2sector = [1,1,1,3,2,3,2,1,3,3,2,2,3,2,3,2,1,2,1,1] 
+    elseif L==2
+        asset2sector = [1,1,1,2,2,1,2,1,1,2,2,2,1,2,1,2,1,2,1,1]
+    end
     H = sparse(collect(1:N),asset2sector[1:N],ones(N))
     return H
 end
@@ -76,7 +85,7 @@ function solveGurobi(ρ,r, Λ)
 
     optimize!(exact_model)
     solution = vcat(value.(exact_model[:xplus]), value.(exact_model[:xminus]), value.(exact_model[:bin]), value.(exact_model[:l]))
-    println("Exact (Gurobi) solution: ", objective_value(exact_model) , " using ", solution) 
+    #println("Exact (Gurobi) solution: ", objective_value(exact_model) , " using ", solution) 
 
     return exact_model,solution
 end
@@ -90,8 +99,8 @@ function getData(ρ,r,Λ)
     @objective(model,Min,-sum(r[i]*(model[:xplus][i] -model[:xminus][i]) for i = 1:N)) # maximise average return (constant 1/T not included here)
     add_constraints(model,N,L, M,K,Lmin, Lmax, ρ,Λ)
     optimize!(model)
-    print("Solve_base_model in JuMP: ",solution_summary(model))
-    println("JuMP solution relaxed: ",  objective_value(model) , " using ", value.(model[:xplus]), value.(model[:xminus]), value.(model[:bin]), value.(model[:l]))
+    #print("Solve_base_model in JuMP: ",solution_summary(model))
+    #println("JuMP solution relaxed: ",  objective_value(model) , " using ", value.(model[:xplus]), value.(model[:xminus]), value.(model[:bin]), value.(model[:l]))
     P,q,A,b, cones= getClarabelData(model)
     #=println("A : ", A)
     println("b : ", b)
@@ -108,7 +117,7 @@ end
 N = 20 # 20 is max. number of assets
 L = 3
 M = 1.0 # total investement (money)
-K = 2 # maximum number of investments (sum of bin vars)
+K = 10 # maximum number of investments (sum of bin vars), want it to be GREATER than L
 Lmin = 1
 Lmax = L
 λ = 0.99
@@ -117,7 +126,7 @@ total_num = 3*N+L
 T = 2000 # end of period (how many days to consider / rows in data sheet)
 R = get_return_data(N,T)# return rates
 Λ = calc_variance(N, R)
-H = get_sector_asset_matrix()
+H = get_sector_asset_matrix(L)
 binary_vars = collect(2*N+1:3*N+L) # indices of binary variables
 without_iter_num = Int64[]
 with_iter_num = Int64[]
@@ -128,13 +137,13 @@ total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
 V0 = 10000
-ρ_values = [1]# SOC constraint for risk return
+ρ_values = [1e-7]# SOC constraint for risk return
 ρ_values_str = ["1"]
 #= w = zeros(20,1)
 w[20]=1.0
 r=R*w =#
 
-for i in 1:lastindex(ρ_values)
+#= for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     r = (1/T)*ones(1,T)*R
     exact_model, exact_solution = solveGurobi(ρ,r,Λ)
@@ -172,11 +181,11 @@ for i in 1:lastindex(ρ_values)
     save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
 
     
-end
+end =#
 
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
-    for t in 1000:1200
+    for t in 1005:1005
         R = get_return_data(N,t) # return rates
         Λ = calc_variance(N, R)
         r = (1/t)*ones(1,t)*R
@@ -197,7 +206,7 @@ for i in 1:lastindex(ρ_values)
         best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
 
         println("Termination status of Clarabel solver:" , solver.info.status)
-        println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+        #println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
         diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
         diff_solution=round(norm(diff_sol_vector),digits=5)
         diff_obj = round(best_ub-objective_value(exact_model),digits=5)
@@ -207,6 +216,7 @@ for i in 1:lastindex(ρ_values)
             println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
             error("Solutions differ!")
         end
+        println("x'Λx: ",feasible_solution'*Λ*feasible_solution)
         
         println("Number of early terminated nodes: ", early_num)
 
@@ -236,7 +246,7 @@ for i in 1:lastindex(ρ_values)
             append!(first_iter_num, fea_iter)
         end  
     end
-    save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+    #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
 end 
 
