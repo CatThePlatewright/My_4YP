@@ -10,7 +10,7 @@ function create_variables(model,N,L)
 end
 function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
 
-    @constraint(model, cost_constraint, [1+ρ; [sqrt(Λ)*(model[:xplus]-model[:xminus]); 1-ρ]] in SecondOrderCone()) 
+    @constraint(model, cost_constraint, [1+ρ; [sqrt(Λ)*(model[:xplus]-model[:xminus]); 1-ρ]] in SecondOrderCone())     
     # sum constraints
     @constraint(model, sum_investments, sum(model[:xplus]-model[:xminus]) == M)
     @constraint(model, sum_number_investments, sum(model[:bin]) <= K)
@@ -26,7 +26,8 @@ function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
     @constraint(model,ll,-model[:l] .<=zeros(L))
     # upper bounds on individual variables
     @constraint(model,uxplus,model[:xplus] .<= M*model[:bin])
-    @constraint(model,uxminus,model[:xminus] .<= M*model[:bin])
+    # try only having long positions:
+    @constraint(model,uxminus,model[:xminus] .<= 0*model[:bin]) 
     @constraint(model,ubin,model[:bin] .<=ones(N))
     @constraint(model,ul,model[:l] .<=ones(L))
     
@@ -41,11 +42,17 @@ function calc_variance(N::Int, R::Matrix)
             Λ[i,j] = cov(R[:,i], R[:,j]) # average over the time frame day 0 to day 2516
         end
     end
-    E,U = eigen(Λ)
-    println("eigenvalues: ",E)
-    println(minimum(E))
-    println(maximum(E))
-    error("stop")
+    E,_ = eigen(Λ)
+    #= println("max lambda", maximum(Λ))
+    println("max lambda eig ",maximum(E))
+    max lambda 0.0015417689750898192
+max lambda eig 0.004837967766967712 =#
+
+    Λ = Λ./maximum(E) # normalize so that largest eigenvalue is 1.0 not of the order of 1e-4
+    #= println("max lambda eig ",maximum(E))
+    println("max lambda", maximum(Λ))
+    max lambda eig 1.0000000000000002
+max lambda 0.31868111764129264 =#
     return Λ
 end
 
@@ -116,7 +123,7 @@ end
 
 N = 20 # 20 is max. number of assets
 L = 3
-M = 1.0 # total investement (money)
+M = 1.0 # total investment (money)
 K = 10 # maximum number of investments (sum of bin vars), want it to be GREATER than L
 Lmin = 1
 Lmax = L
@@ -137,15 +144,19 @@ total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
 V0 = 10000
-ρ_values = [1e-7]# SOC constraint for risk return
-ρ_values_str = ["1"]
+ρ_values = [1e-4,1e-3,1e-2,1e-1,1]# SOC constraint for risk return
+ρ_values_str = ["1e-4","1e-3","1e-2","1e-1","1"]
 #= w = zeros(20,1)
 w[20]=1.0
 r=R*w =#
+ρ_values = [0.015,0.012]# SOC constraint for risk return
+ρ_values_str = ["1.5e-2","1.2e-2"]
 
-#= for i in 1:lastindex(ρ_values)
+
+for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     r = (1/T)*ones(1,T)*R
+    println("r: ",r)
     exact_model, exact_solution = solveGurobi(ρ,r,Λ)
     P,q,A,b, s, binary_vars= getData(ρ,r,Λ)
     println("Setting up Clarabel solver...")
@@ -155,17 +166,18 @@ r=R*w =#
     Clarabel.setup!(solver, P, q, A, b, s, settings)
 
     result = Clarabel.solve!(solver, Inf)
-    #println(result)
+    println(result)
 
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
     best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
 
     println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+    println("Found objective: ", best_ub)
     x_plus = feasible_solution[1:N]
     x_minus = feasible_solution[N+1:2*N]
-    r_solution = R*(x_plus-x_minus) 
+    println("xplus: ", round.(x_plus,digits=2))
+    println("xminus: ", round.(x_minus,digits=2))
     diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
     diff_solution=round(norm(diff_sol_vector),digits=4)
     diff_obj = round(best_ub-objective_value(exact_model),digits=4) # digits=5 resulted in one different solution by 2.0e-5
@@ -176,13 +188,32 @@ r=R*w =#
         error("Solutions differ!")
     end
     
+    for j in 1:lastindex(x_plus)
+        if x_plus[j]>0 && x_minus[j]>0
+            w = min(x_minus[j],x_plus[j])
+            x_minus[j] = x_minus[j]-w
+            x_plus[j] = x_plus[j]-w
+        end
+    end 
+    opt_value = - sum(r[i]*(x_plus[i] -x_minus[i]) for i = 1:N)
+
+    println("New objective: ",opt_value)
+    println("xplus: ", round.(x_plus,digits=2))
+    println("xminus: ", round.(x_minus,digits=2))
+    diff_obj = round(best_ub-opt_value,digits=4) # digits=5 resulted in one different solution by 2.0e-5
+    if ~iszero(diff_obj)
+        println("--- Objective difference: ", diff_obj)
+        error("Solutions differ!")
+    end
+    r_solution = R*(x_plus-x_minus) 
     portfolio_value = portfolio_V(V0,r_solution)
 
-    save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
+
+    save(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
 
     
-end =#
-
+end 
+#=
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     for t in 1005:1005
@@ -249,5 +280,5 @@ for i in 1:lastindex(ρ_values)
     #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
 end 
-
+=#
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)
