@@ -167,17 +167,19 @@ function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start:
     return result
 end
 
-function evaluate_constraint_mpc(solver,x, integer_vars)
-    g_width = solver.cones.cone_specs[1].dim # first elements of Ax+s=b encode Gx==h
-    G = solver.data.A[1:g_width,:] 
-    numel_states = length(x)-length(integer_vars)
-    Gx = G[:,1:end-length(integer_vars)] # entries corresponding to continuous state vars
-    if size(Gx)[1] != size(Gx)[2]
-        error("Gx is not square!")
+function evaluate_constraint_mpc(solver,x, integer_vars, ldltS)
+    if ldltS != nothing
+        g_width = solver.cones.cone_specs[1].dim # first elements of Ax+s=b encode Gx==h
+        G = solver.data.A[1:g_width,:] 
+        numel_states = length(x)-length(integer_vars)
+        Gx = G[:,1:end-length(integer_vars)] # entries corresponding to continuous state vars
+        if size(Gx)[1] != size(Gx)[2]
+            error("Gx is not square!")
+        end
+        Gu = G[:,end - length(integer_vars) + 1:end] # entries corresponding to discrete input vars
+        # fix up the continuous vars (x) to satisfy equality constraint (state dynamics)
+        x[1:end-length(integer_vars)] .= inv(Matrix(Gx))*(solver.data.b[1:g_width] - Gu*x[end - length(integer_vars) + 1:end])
     end
-    Gu = G[:,end - length(integer_vars) + 1:end] # entries corresponding to discrete input vars
-    # fix up the continuous vars (x) to satisfy equality constraint (state dynamics)
-    x[1:end-length(integer_vars)] .= inv(Matrix(Gx))*(solver.data.b[1:g_width] - Gu*x[end - length(integer_vars) + 1:end])
     s = zeros(length(solver.data.b))
      #Same as:  residuals.rz_inf .=  data.b - data.A * variables.x 
     s .= solver.data.b
@@ -213,7 +215,7 @@ end
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(solver,n::Int,integer_vars,relaxed_vars,debug_print=false)
+function compute_ub(solver,n::Int,integer_vars,relaxed_vars,ldltS,debug_print=false)
     # set the relaxed_vars / lb result equal to the rounded binary values
     # if these are in the set of binary variables   
     if isinf(relaxed_vars[1])
@@ -229,7 +231,7 @@ function compute_ub(solver,n::Int,integer_vars,relaxed_vars,debug_print=false)
         println("rounded variables: ", x[end - length(integer_vars) + 1:end])
     end
 
-    if evaluate_constraint_mpc(solver,x,integer_vars)
+    if evaluate_constraint_mpc(solver,x,integer_vars,ldltS)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
         println("Valid upper bound : ", obj_val," using integer feasible u: ", x[end - length(integer_vars) + 1:end])
         return obj_val, x
@@ -300,7 +302,7 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         lb = base_solution.obj_val
         println("Integer solution u of unbounded base model: ", base_solution.x[end - length(integer_vars) + 1:end])
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
-        best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x)
+        best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x,ldltS)
         # this is our root node of the binarytree
         root = BnbNode(ClarabelNodeData(solver,base_solution.x,base_solution.z, base_solution.s,[],[],[],lb)) #base_solution is node.data.Model
         node = root
@@ -367,7 +369,7 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         end
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
-            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left, debug_print)
+            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left, ldltS,debug_print)
             println("Left node, solved for ũ: ", ũ)
             best_ub, best_feasible_solution, fea_iter = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth, total_iter, fea_iter)
             push!(node_queue,left_node)
@@ -391,7 +393,7 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         end
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
-            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right, debug_print)
+            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right, ldltS,debug_print)
             println("Right node, solved for ū: ", ū)
             best_ub, best_feasible_solution, fea_iter = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth, total_iter, fea_iter)
             push!(node_queue,right_node)
