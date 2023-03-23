@@ -3,8 +3,8 @@ using PyPlot
 using Printf
 
 
-ρ_values_str = ["1e-4", "1e-3","1e-2","1e-1", "2e-2","1.5e-2","1.2e-2"]
-# these give the same plot: 1/N,5e-2,4e-2,3e-2,1e-1
+ρ_values_str = ["1e-4", "1e-3","1e-2","1.2e-2","1.5e-2","1e-1",]
+# these give the same plot: 1/N,5e-2,4e-2,3e-2,1e-1,1
 T = 2000
 PyPlot.clf()
 fig = figure("Portfolio value over time",figsize=(10,10))
@@ -19,11 +19,11 @@ handles = Vector()
 xaxis_range = 1:T
 
 for i in 1:lastindex(ρ_values_str)
-    portfolio_value = load(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]),"Vt")
-    xplus = load(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]),"xplus")
-    xminus = load(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]),"xminus")
-    r_solution = load(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]),"r_solution")
-    opt_value = load(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]),"optimal_value")
+    portfolio_value = load(@sprintf("portfolio_%s.jld",ρ_values_str[i]),"Vt")
+    xplus = load(@sprintf("portfolio_%s.jld",ρ_values_str[i]),"xplus")
+    xminus = load(@sprintf("portfolio_%s.jld",ρ_values_str[i]),"xminus")
+    r_solution = load(@sprintf("portfolio_%s.jld",ρ_values_str[i]),"r_solution")
+    opt_value = load(@sprintf("portfolio_%s.jld",ρ_values_str[i]),"optimal_value")
     println("RHO: ",ρ_values_str[i])
     println("xplus: ", round.(xplus,digits=2))
     println("xminus: ", round.(xminus,digits=2))
@@ -35,10 +35,9 @@ end
 PyPlot.legend(handles=handles)
 ylabel("Portfolio value (in thousand dollars)")
 xlabel("Day") 
-ylim([0,150])
 grid()
 
-savefig("my_total_portfolio_long_pos.pdf")
+savefig("my_total_portfolio.pdf")
 
 # Complete plot
 #= ax[0].set_ylabel()

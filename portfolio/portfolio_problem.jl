@@ -12,7 +12,7 @@ function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
 
     @constraint(model, cost_constraint, [1+ρ; [sqrt(Λ)*(model[:xplus]-model[:xminus]); 1-ρ]] in SecondOrderCone())     
     # sum constraints
-    @constraint(model, sum_investments, sum(model[:xplus]-model[:xminus]) == M)
+    @constraint(model, sum_investments, sum(model[:xplus]+model[:xminus]) == M)
     @constraint(model, sum_number_investments, sum(model[:bin]) <= K)
     @constraint(model, sum_sectors_lb, -sum(model[:l]) <= -Lmin)
     @constraint(model, sum_sectors_ub, sum(model[:l]) <= Lmax)
@@ -26,8 +26,7 @@ function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
     @constraint(model,ll,-model[:l] .<=zeros(L))
     # upper bounds on individual variables
     @constraint(model,uxplus,model[:xplus] .<= M*model[:bin])
-    # try only having long positions:
-    @constraint(model,uxminus,model[:xminus] .<= 0*model[:bin]) 
+    @constraint(model,uxminus,model[:xminus] .<=M*model[:bin]) 
     @constraint(model,ubin,model[:bin] .<=ones(N))
     @constraint(model,ul,model[:l] .<=ones(L))
     
@@ -144,13 +143,12 @@ total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
 V0 = 10000
-ρ_values = [1e-4,1e-3,1e-2,1e-1,1]# SOC constraint for risk return
-ρ_values_str = ["1e-4","1e-3","1e-2","1e-1","1"]
+ρ_values = [0.015,0.012,1e-4,1e-3,1e-2,1e-1,1]# SOC constraint for risk return
+ρ_values_str = ["1.5e-2","1.2e-2","1e-4","1e-3","1e-2","1e-1","1"]
 #= w = zeros(20,1)
 w[20]=1.0
 r=R*w =#
-ρ_values = [0.015,0.012]# SOC constraint for risk return
-ρ_values_str = ["1.5e-2","1.2e-2"]
+
 
 
 for i in 1:lastindex(ρ_values)
@@ -188,13 +186,13 @@ for i in 1:lastindex(ρ_values)
         error("Solutions differ!")
     end
     
-    for j in 1:lastindex(x_plus)
+    #= for j in 1:lastindex(x_plus)
         if x_plus[j]>0 && x_minus[j]>0
             w = min(x_minus[j],x_plus[j])
             x_minus[j] = x_minus[j]-w
             x_plus[j] = x_plus[j]-w
         end
-    end 
+    end  =#
     opt_value = - sum(r[i]*(x_plus[i] -x_minus[i]) for i = 1:N)
 
     println("New objective: ",opt_value)
@@ -209,7 +207,7 @@ for i in 1:lastindex(ρ_values)
     portfolio_value = portfolio_V(V0,r_solution)
 
 
-    save(@sprintf("portfolio_%s_long_pos.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
+    save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
 
     
 end 
