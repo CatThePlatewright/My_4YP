@@ -111,7 +111,7 @@ function add_branching_constraint(b::Vector, integer_vars, fixed_x_indices, fix_
                 b[end-2*m+i] = j # is already passed as negative l in x[i] >= l
             end
         end
-        println(b)
+        # println(b)
         
     end
     return b
@@ -125,7 +125,8 @@ end
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, total_iter::Int,early_term_enable::Bool, warm_start::Bool, λ, ldltS,prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false,dom_prog_enable::Bool=false, total_nodes=Nothing)
+function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, 
+    total_iter::Int, total_time::Float64, early_term_enable::Bool, warm_start::Bool, λ, luS,prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false,dom_prog_enable::Bool=false, total_nodes=Nothing)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
@@ -138,39 +139,40 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
         domain_prop = domain_propagation_mpc!(A,b,n,integer_vars)
         if isinf(domain_prop)
             println("Infeasible relaxed problem")
-            return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter
+            return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter, total_time
         end 
     end
 
     #solve using IPM with early_termination checked at the end if feasible solution best_ub is available
-    solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, λ, prev_x, prev_z, prev_s,ldltS,debug_print)
+    solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start, λ, prev_x, prev_z, prev_s,luS,debug_print)
     total_iter += solver.info.iterations
+    total_time += solver.info.solve_time
     total_nodes += 1
 
     if isnothing(solution)
         early_num = early_num+ 1
-        printstyled("Node early termination, increase counter by 1 \n", color = :red)
-        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_nodes
+        # printstyled("Node early termination, increase counter by 1 \n", color = :red)
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_time, total_nodes
     end
     if solution.status== Clarabel.SOLVED
         if debug_print
             println("Values of relaxed solution ", solution.x)
         end
-        return solution.obj_val, solution.x,solution.z, solution.s, early_num, total_iter, total_nodes
+        return solution.obj_val, solution.x,solution.z, solution.s, early_num, total_iter, total_time, total_nodes
     else 
         println("Infeasible relaxed problem")
-        return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter, total_nodes
+        return Inf, [Inf for _ in 1:n], [Inf for _ in 1:n],[Inf for _ in 1:n],early_num, total_iter, total_time, total_nodes
     end
 end
 
 
-function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start::Bool,λ, prev_x, prev_z, prev_s,ldltS, debug_print::Bool)
-    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, ldltS, debug_print,λ, prev_x, prev_z, prev_s)
+function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start::Bool,λ, prev_x, prev_z, prev_s,luS, debug_print::Bool)
+    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, luS, debug_print,λ, prev_x, prev_z, prev_s)
     return result
 end
 
-function evaluate_constraint_mpc(solver,x, integer_vars, ldltS)
-    if ldltS != nothing
+function evaluate_constraint_mpc(solver,x, integer_vars, luS)
+    if luS !== nothing
         g_width = solver.cones.cone_specs[1].dim # first elements of Ax+s=b encode Gx==h
         G = solver.data.A[1:g_width,:] 
         numel_states = length(x)-length(integer_vars)
@@ -186,10 +188,10 @@ function evaluate_constraint_mpc(solver,x, integer_vars, ldltS)
      #Same as:  residuals.rz_inf .=  data.b - data.A * variables.x 
     s .= solver.data.b
     mul!(s, solver.data.A, x, -1, 1) 
-    printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
+    # printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
 
     cone_specs = solver.cones.cone_specs
-    println(cone_specs, length(cone_specs))
+    # println(cone_specs, length(cone_specs))
     j = 1
     while j <= length(solver.data.b)
         for i in eachindex(cone_specs)
@@ -217,7 +219,7 @@ end
 For Mixed_binary_solver: variables of indices from integer_vars (defaulted to all) are rounded based on relaxed_vars from lower_bound_model.
 fixed_x_values is the vector of corresponding variables fixed on this iteration, if isnothing, that is the root case
 and all variables take on the rounded values."
-function compute_ub(solver,n::Int,integer_vars,relaxed_vars,ldltS,debug_print=false)
+function compute_ub(solver,n::Int,integer_vars,relaxed_vars,luS,debug_print=false)
     # set the relaxed_vars / lb result equal to the rounded binary values
     # if these are in the set of binary variables   
     if isinf(relaxed_vars[1])
@@ -233,12 +235,12 @@ function compute_ub(solver,n::Int,integer_vars,relaxed_vars,ldltS,debug_print=fa
         println("rounded variables: ", x[end - length(integer_vars) + 1:end])
     end
 
-    if evaluate_constraint_mpc(solver,x,integer_vars,ldltS)
+    if evaluate_constraint_mpc(solver,x,integer_vars,luS)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
-        println("Valid upper bound : ", obj_val," using integer feasible u: ", x[end - length(integer_vars) + 1:end])
+        # println("Valid upper bound : ", obj_val," using integer feasible u: ", x[end - length(integer_vars) + 1:end])
         return obj_val, x
     else 
-        println("Infeasible or unbounded problem for ub computation")
+        # println("Infeasible or unbounded problem for ub computation")
         return Inf, [Inf for _ in 1:n]
     end
 end
@@ -246,24 +248,28 @@ end
 function check_lb_pruning(node, best_ub)
     #println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
     if node.data.lb - best_ub >1e-5 || node.data.lb == Inf
-        println("Prune node with lower bound larger than best ub or ==INF")
+        # println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
         return true
     end
     return false
 end
 
-function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth, total_iter::Int, fea_iter::Int, total_nodes::Int,fea_nodes::Int)
+function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth, 
+    total_iter::Int, fea_iter::Int, 
+    total_time::Float64, fea_time::Float64, 
+    total_nodes::Int,fea_nodes::Int)
     if (u < best_ub) # this only happens if node is not pruned
         if isinf(best_ub)
             fea_iter = total_iter
             fea_nodes = total_nodes
+            fea_time = total_time
         end
         best_ub = u
-        println("FOUND BETTER UB AT DEPTH ", depth)
+        # println("FOUND BETTER UB AT DEPTH ", depth)
         best_feasible_solution = feasible_solution
     end
-    return best_ub, best_feasible_solution, fea_iter, fea_nodes
+    return best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes
 end
 #select a leaf from leaves for computing
 function select_leaf(node_queue::Vector{BnbNode}, best_ub)
@@ -292,7 +298,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
     end
 end
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,ldltS = Nothing, debug_print::Bool = true, dom_prog_enable::Bool=false)
+function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool = true, warm_start::Bool = false, λ=0.0,luS = Nothing, debug_print::Bool = false, dom_prog_enable::Bool=false)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0
@@ -301,11 +307,13 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
     max_nb_nodes = 1000
     total_iter = 0
     fea_iter = 0
+    total_time = zero(Float64)
+    fea_time = zero(Float64)
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
-        println("Integer solution u of unbounded base model: ", base_solution.x[end - length(integer_vars) + 1:end])
+        # println("Integer solution u of unbounded base model: ", base_solution.x[end - length(integer_vars) + 1:end])
         # 2) compute U1, upper bound on p* by rounding the solution variables of 1)
-        best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x,ldltS)
+        best_ub, best_feasible_solution = compute_ub(solver, n,integer_vars, base_solution.x,luS)
         # this is our root node of the binarytree
         root = BnbNode(ClarabelNodeData(solver,base_solution.x,base_solution.z, base_solution.s,[],[],[],lb)) #base_solution is node.data.Model
         node = root
@@ -323,18 +331,18 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
             printstyled("MAXIMUM NUMBER OF NODES REACHED \n",color = :red)
             break
         end 
-        println(" ")
-        println("Node queue length : ", length(node_queue))
+        # println(" ")
+        # println("Node queue length : ", length(node_queue))
         
         # pick and remove node from node_queue
         node = select_leaf(node_queue, best_ub)
 
 
-        println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
+        # println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
         if best_ub - node.data.lb <= ϵ
             break
         end
-        printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
+        # printstyled("Best ub: ", best_ub, " with feasible solution : ", best_feasible_solution,"\n",color= :green)
         if debug_print
             println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x[end - length(integer_vars) + 1:end])
         end
@@ -359,13 +367,13 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         # left branch always fixes the next variable to closest lower integer
         fixed_x_left = vcat(node.data.fixed_x_values, floor_value) 
         upper_or_lower_vec_left = vcat(node.data.upper_or_lower_vec, 1)
-        println("fixed_x_left: ", fixed_x_left)
+        # println("fixed_x_left: ", fixed_x_left)
 
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_nodes = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable,warm_start, λ, ldltS, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable, total_nodes) 
-        println("solved for l̃: ", l̃)
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_time, total_nodes = compute_lb(left_solver, n,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, total_time, early_term_enable,warm_start, λ, luS, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable, total_nodes) 
+        # println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
@@ -374,23 +382,23 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         end
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
-            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left, ldltS,debug_print)
-            println("Left node, solved for ũ: ", ũ)
-            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth, total_iter, fea_iter,total_nodes,fea_nodes)
+            ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left, luS,debug_print)
+            # println("Left node, solved for ũ: ", ũ)
+            best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth, total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes)
             push!(node_queue,left_node)
         end
         if debug_print
             println("fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
         end
-        println(" ")
+        # println(" ")
         
         # solve the right child problem to get l-bar and u-bar
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
-        println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_nodes= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable,warm_start,λ,ldltS, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable, total_nodes)
-        println("solved for l̄: ", l̄)
+        # println("fixed_x_right: ", ceil(x[fixed_x_index]))
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_time, total_nodes= compute_lb(right_solver,n, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, total_time, early_term_enable,warm_start,λ,luS, x, node.data.solution_z, node.data.solution_s, debug_print,dom_prog_enable, total_nodes)
+        # println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right,z_right,s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         if pruning_enable
@@ -398,9 +406,9 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         end
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
-            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right, ldltS,debug_print)
-            println("Right node, solved for ū: ", ū)
-            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth, total_iter, fea_iter,total_nodes,fea_nodes)
+            ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right, luS,debug_print)
+            # println("Right node, solved for ū: ", ū)
+            best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth, total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes)
             push!(node_queue,right_node)
         end
         if debug_print
@@ -416,8 +424,8 @@ function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer
         end
         
         iteration += 1 #TODO: could increment by 2 to count number of solved (or early_terminated) QPs
-        println("BnB loop iteration : ", iteration)
+        # println("BnB loop iteration : ", iteration)
     end
     
-    return best_ub, best_feasible_solution, early_num, total_iter, fea_iter,total_nodes,fea_nodes
+    return best_ub, best_feasible_solution, early_num, total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes
 end

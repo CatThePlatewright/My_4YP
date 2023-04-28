@@ -32,7 +32,7 @@ function generate_sparse_MPC_Clarabel(index=2400)
     R = fixed_data["R"]
     F = fixed_data["F"]   
     horizon = fixed_data["horizon"]
-    println("horizon: ", horizon)
+    # println("horizon: ", horizon)
     # generate the sparse MPC model
     (nx,nu) = size(barB)   #dimension of x,u in x_{k+1} = ̄Ax_k + ̄Bu_k
     (mF,nF) = size(F)
@@ -78,13 +78,13 @@ function factorize_optimization_based_matrix(data,Ib,G, σ, η, γ)
     S = [Symmetric(data.P+σ*Matrix(1.0I,n,n))     Ib'    G';
     Ib   -η*Matrix(1.0I, ib_width, ib_width)        zeros(ib_width,g_width);
     G     zeros(g_width, ib_width)     -γ*Matrix(1.0I, g_width,g_width)]
-    ldltS = ldlt(sparse(S))
-    return ldltS
+    luS = lu(sparse(S))
+    return luS
 end
 # Formulation of MPC without state variables
 function generate_dense_MPC_Clarabel(index=2400)
-    adaptive_data = npzread("power_converter/results/adaptive_denseMPC_N=2.npz")
-    fixed_data = npzread("power_converter/results/fixed_denseMPC_N=2.npz")
+    adaptive_data = npzread(@sprintf("power_converter/results/adaptive_denseMPC_N=%d.npz",N))
+    fixed_data = npzread(@sprintf("power_converter/results/fixed_denseMPC_N=%d.npz",N))
     P = fixed_data["P"]
     q = adaptive_data["q"][:,index]
     A = fixed_data["A"] 
@@ -106,16 +106,27 @@ end
     
 without_iter_num = Int64[]
 with_iter_num = Int64[]
+without_time_num = Float64[]
+with_time_num = Float64[]
+
 first_iter_num = Int64[]
 percentage_iter_reduction = Float64[]
+percentage_time_reduction = Float64[]
+
 total_nodes_num = Int64[]
 total_nodes_without_num = Int64[]
 fea_nodes_num = Int64[]
 fea_nodes_without_num = Int64[]
 start_horizon = 2200
-end_horizon = 2300
+end_horizon = 2300      #2300
 num_errors = 0
+
+warm_start = true
+debug_print = false
 for i = start_horizon:end_horizon
+##########################################################################
+# sparse formulation for MIMPC:
+##########################################################################
     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, G,h, Ib, A, b, Ã, b̃, cones, lb, ub, i_idx= generate_sparse_MPC_Clarabel(i)
     n = length(q)
@@ -136,7 +147,7 @@ for i = start_horizon:end_horizon
     end)
     optimize!(model)
     uopt1 = value.(x)[end - Nnu + 1:end]
-    println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
+    # println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1)  #optimum at time i
     
     λ=0.99
     η= 1000 # penalisation for y_B
@@ -146,27 +157,31 @@ for i = start_horizon:end_horizon
     ϵ = 1e-6
  
     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+    #################################################
+    # YC: solve the problem with early termination
+    #################################################
     solver   = Clarabel.Solver()
 
     Clarabel.setup!(solver, P, q, Ã, b̃,cones, settings)
-    ldltS = factorize_optimization_based_matrix(solver.data,Ib,G,σ,η, γ)
+    luS = factorize_optimization_based_matrix(solver.data,Ib,G,σ,η, γ)
     base_solution = Clarabel.solve!(solver)
-    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x[end - Nnu + 1:end])
+    # println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x[end - Nnu + 1:end])
 
-    #start bnb loop
-    println("STARTING CLARABEL BNB LOOP ")
+    # #start bnb loop
+    # println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter,total_nodes,fea_nodes = branch_and_bound_solve(i, solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,true,false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes = branch_and_bound_solve(i, solver, base_solution,n,ϵ, i_idx, true, true, warm_start, λ,luS,debug_print,false) 
 
     
-    println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Number of early terminated nodes: ", early_num)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution[end - Nnu + 1:end],digits=3))
-    println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
-    println(" ")
+    # println("Termination status of Clarabel solver:" , solver.info.status)
+    # println("Number of early terminated nodes: ", early_num)
+    # println("Found objective: ", best_ub, " using ", round.(feasible_solution[end - Nnu + 1:end],digits=3))
+    # println("Gurobi base_solution: ", objective_value(model) , " using ", uopt1) 
+    # println(" ")
     diff_sol_vector= feasible_solution[end - Nnu + 1:end] - uopt1
     diff_solution=round(norm(diff_sol_vector),digits=3)
     diff_obj = round(best_ub-objective_value(model),digits=6)
+    @assert(diff_obj ≈ 0)       # YC: Check whether converge to the same optimum
     if ~iszero(diff_solution) || ~iszero(diff_obj)
         println("Solution diff: ",diff_solution, "Obj difference: ", diff_obj)
         println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
@@ -177,121 +192,170 @@ for i = start_horizon:end_horizon
     
 
     # count QP iterations    
-    printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
+    # printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
+    printstyled("Total net time (with early_term_enable): ", total_time-fea_time, "\n", color = :green)
+    
+    #################################################
+    # YC: solve the problem without early termination
+    #################################################
     solver_without   = Clarabel.Solver()
 
     Clarabel.setup!(solver_without, P, q, Ã, b̃,cones, settings)
     
     base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without,total_nodes_without,fea_nodes_without = branch_and_bound_solve(i,solver_without, base_solution_without,n,ϵ, i_idx, true, false, true,λ,ldltS,false,false) 
-    println("Found objective without early_term: ", best_ub_without)
-    println("Number of early terminated nodes (without): ", early_num_without)
-    printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
-    reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
-    println("Reduced iterations (percentage): ", reduction)
+    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_time_without, fea_time_without, total_nodes_without,fea_nodes_without = branch_and_bound_solve(i,solver_without, base_solution_without,n,ϵ, i_idx, true, false, warm_start,λ,luS,debug_print,false) 
+    # println("Found objective without early_term: ", best_ub_without)
+    # println("Number of early terminated nodes (without): ", early_num_without)
+    # printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
+    @assert(total_iter_without - fea_iter_without >= 0.0)
+    if iszero(total_iter_without - fea_iter_without)
+        reduction = 0.0
+    else
+        reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
+    end
+    # println("Reduced iterations (percentage): ", reduction)
+    printstyled("Total net time (without): ", total_time_without - fea_time_without, "\n", color = :green)
+    @assert(total_time_without - fea_time_without >= 0.0)
+    if iszero(total_time_without - fea_time_without)
+        reduction_time = 0.0
+    else
+        reduction_time = 1 - (total_time - fea_time)/(total_time_without - fea_time_without)
+    end
+    # println("Reduced time (percentage): ", reduction)
+
+    #Store information for each time interval
     append!(without_iter_num, total_iter_without)
     append!(with_iter_num, total_iter)
     append!(percentage_iter_reduction, reduction)
+    # append!(total_nodes_num,total_nodes)
+    # append!(total_nodes_without_num,total_nodes_without)
+    # append!(fea_nodes_num,fea_nodes)
+    # append!(fea_nodes_without_num,fea_nodes_without)
+    # if (fea_iter == fea_iter_without)
+    #     append!(first_iter_num, fea_iter)
+    # end
+    append!(without_time_num, total_time_without)
+    append!(with_time_num, total_time)
+    append!(percentage_time_reduction, reduction_time)
     append!(total_nodes_num,total_nodes)
     append!(total_nodes_without_num,total_nodes_without)
     append!(fea_nodes_num,fea_nodes)
     append!(fea_nodes_without_num,fea_nodes_without)
-    if (fea_iter == fea_iter_without)
-        append!(first_iter_num, fea_iter)
-    end
-    println("Total iterations: ", total_iter, " ", total_iter_without)
-    println(" ") 
+    # println("Total iterations: ", total_iter, " ", total_iter_without)
+    # println(" ") 
 end
-save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
+#save w.r.t. iteration
+# save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
 
+#save w.r.t. time 
+# save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_time", with_time_num, "without_time", without_time_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
 
-# dense formulation for MIMPC:
-#=    printstyled("Horizon iteration: ", i, "\n", color = :magenta)
-    P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
-    n = length(q)
+###########################################################################
+# # dense formulation for MIMPC:
+###########################################################################
+#     printstyled("Horizon iteration: ", i, "\n", color = :magenta)
+#     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
+#     n = length(q)
 
-    model2 = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(model2, "OutputFlag", 0)
-    @variable(model2, x[1:n])
-    set_integer.(x[i_idx])  #set integer constraints
-    @objective(model2, Min, 0.5*x'*P*x + q' * x )
-    dim = length(lb)
-    @constraints(model2, begin
-        x .>= lb
-        x .<= ub
-    # for -Ax ≤ -l constraints, consider only last 3N rows since no lower bound for (R-SB)*U ≤ S*X constraints
-        b[dim+1:end] + A[dim+1:end,:]*x .>= l[dim+1:end] # TOASK: confirm that A should be +fixed_data not -?
-        b + A*x .<= u
-    end)
-    optimize!(model2)
-    uopt2 = value.(x)
-    println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
-    #check_flag = all(uopt1 .== uopt2)
-    #@assert(check_flag == true)
-    #printstyled("Same solution:", check_flag, "\n",color=:green)
-    λ=0.99
-    ϵ = 1e-6
-    ldltS = nothing
+#     model2 = Model(Gurobi.Optimizer)
+#     set_optimizer_attribute(model2, "OutputFlag", 0)
+#     @variable(model2, x[1:n])
+#     set_integer.(x[i_idx])  #set integer constraints
+#     @objective(model2, Min, 0.5*x'*P*x + q' * x )
+#     dim = length(lb)
+#     @constraints(model2, begin
+#         x .>= lb
+#         x .<= ub
+#     # for -Ax ≤ -l constraints, consider only last 3N rows since no lower bound for (R-SB)*U ≤ S*X constraints
+#         b[dim+1:end] + A[dim+1:end,:]*x .>= l[dim+1:end] # TOASK: confirm that A should be +fixed_data not -?
+#         b + A*x .<= u
+#     end)
+#     optimize!(model2)
+#     uopt2 = value.(x)
+#     # println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
+#     #check_flag = all(uopt1 .== uopt2)
+#     #@assert(check_flag == true)
+#     #printstyled("Same solution:", check_flag, "\n",color=:green)
+#     λ=0.99
+#     ϵ = 1e-6
+#     luS = nothing
 
-    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
-    solver   = Clarabel.Solver()
+#     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+#     solver   = Clarabel.Solver()
 
-    Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
-    #ldltS = factorize_optimization_based_matrix(Clarabel.solver.data,I_B,G,σ,η, γ)
-    base_solution = Clarabel.solve!(solver)
-    println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
+#     Clarabel.setup!(solver, P, q, Ã, b̃,s, settings)
+#     #luS = factorize_optimization_based_matrix(Clarabel.solver.data,I_B,G,σ,η, γ)
+#     base_solution = Clarabel.solve!(solver)
+#     # println("Clarabel base result " ,base_solution, " with base_solution ", base_solution.x)
 
-    #start bnb loop
-    println("STARTING CLARABEL BNB LOOP ")
+#     #start bnb loop
+#     # println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter,total_nodes,fea_nodes = branch_and_bound_solve(i,solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,true,false) 
-
-    
-    println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Number of early terminated nodes: ", early_num)
-    println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
-    println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
-    println(" ")
-    diff_sol_vector= feasible_solution - value.(model2[:x])
-    diff_solution=round(norm(diff_sol_vector),digits=5)
-    diff_obj = round(best_ub-objective_value(model2),digits=6)
-    if ~iszero(diff_solution) || ~iszero(diff_obj)
-        println("Solution diff: ",diff_solution, "Obj difference: ", diff_obj)
-        println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
-        println("Horizon iteration number: ", i)
-        error("Solutions differ!")
-    end
-
-    # count QP iterations    
-    printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
-    solver_without   = Clarabel.Solver()
-
-    Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
-    
-    base_solution_without = Clarabel.solve!(solver_without)
-    best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without,total_nodes_without,fea_nodes_without = branch_and_bound_solve(i,solver_without, base_solution_without,n,ϵ, i_idx, true, false, true,λ,ldltS,false,false) 
-    println("Found objective without early_term: ", best_ub_without)
-    println("Number of early terminated nodes (without): ", early_num_without)
-    printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
-    reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
-    println("Reduced iterations (percentage): ", reduction)
-    append!(without_iter_num, total_iter_without)
-    append!(with_iter_num, total_iter)
-    append!(percentage_iter_reduction, reduction)
-    append!(total_nodes_num,total_nodes)
-    append!(total_nodes_without_num,total_nodes_without)
-    append!(fea_nodes_num,fea_nodes)
-    append!(fea_nodes_without_num,fea_nodes_without)
-
-
-    if (fea_iter == fea_iter_without)
-        append!(first_iter_num, fea_iter)
-    end
-
-    println(" ")
+#     best_ub, feasible_solution, early_num, total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes = branch_and_bound_solve(i,solver, base_solution,n,ϵ, i_idx, true, true, warm_start, λ,luS,debug_print,false) 
 
     
-end  
-save((@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
+#     # println("Termination status of Clarabel solver:" , solver.info.status)
+#     # println("Number of early terminated nodes: ", early_num)
+#     # println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
+#     # println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
+#     # println(" ")
+#     diff_sol_vector= feasible_solution - value.(model2[:x])
+#     diff_solution=round(norm(diff_sol_vector),digits=5)
+#     diff_obj = round(best_ub-objective_value(model2),digits=6)
+#     if ~iszero(diff_solution) || ~iszero(diff_obj)
+#         println("Solution diff: ",diff_solution, "Obj difference: ", diff_obj)
+#         println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
+#         println("Horizon iteration number: ", i)
+#         error("Solutions differ!")
+#     end
+
+#     # count QP iterations    
+#     printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
+#     solver_without   = Clarabel.Solver()
+
+#     Clarabel.setup!(solver_without, P, q, Ã, b̃,s, settings)
+    
+#     base_solution_without = Clarabel.solve!(solver_without)
+#     best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_time_without, fea_time_without,total_nodes_without,fea_nodes_without = branch_and_bound_solve(i,solver_without, base_solution_without,n,ϵ, i_idx, true, false, warm_start,λ,luS,debug_print,false) 
+#     # println("Found objective without early_term: ", best_ub_without)
+#     # println("Number of early terminated nodes (without): ", early_num_without)
+#     printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
+#     @assert(total_iter_without - fea_iter_without >= 0.0)
+#     if iszero(total_iter_without - fea_iter_without)
+#         reduction = 0.0
+#     else
+#         reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
+#     end
+#     # println("Reduced iterations (percentage): ", reduction)
+#     printstyled("Total net time (without): ", total_time_without - fea_time_without, "\n", color = :green)
+#     @assert(total_time_without - fea_time_without >= 0.0)
+#     if iszero(total_time_without - fea_time_without)
+#         reduction_time = 0.0
+#     else
+#         reduction_time = 1 - (total_time - fea_time)/(total_time_without - fea_time_without)
+#     end
+#     # println("Reduced time (percentage): ", reduction)
+
+#     #Store information for each time interval
+#     append!(without_iter_num, total_iter_without)
+#     append!(with_iter_num, total_iter)
+#     append!(percentage_iter_reduction, reduction)
+#     # append!(total_nodes_num,total_nodes)
+#     # append!(total_nodes_without_num,total_nodes_without)
+#     # append!(fea_nodes_num,fea_nodes)
+#     # append!(fea_nodes_without_num,fea_nodes_without)
+#     # if (fea_iter == fea_iter_without)
+#     #     append!(first_iter_num, fea_iter)
+#     # end
+#     append!(without_time_num, total_time_without)
+#     append!(with_time_num, total_time)
+#     append!(percentage_time_reduction, reduction_time)
+#     append!(total_nodes_num,total_nodes)
+#     append!(total_nodes_without_num,total_nodes_without)
+#     append!(fea_nodes_num,fea_nodes)
+#     append!(fea_nodes_without_num,fea_nodes_without)
+#     # println("Total iterations: ", total_iter, " ", total_iter_without)
+#     # println(" ") 
+# end  
+# # save((@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
    
-=#

@@ -207,7 +207,7 @@ for i in 1:lastindex(ρ_values)
     portfolio_value = portfolio_V(V0,r_solution)
 
 
-    save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
+    # save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
 
     
 end 
