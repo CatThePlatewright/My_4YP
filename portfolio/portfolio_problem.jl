@@ -149,8 +149,8 @@ V0 = 10000
 w[20]=1.0
 r=R*w =#
 
-ρ_values = [1e-4]
-ρ_values_str = ["1e-4"]
+ρ_values = [1]
+ρ_values_str = ["1"]
 
 #=
 for i in 1:lastindex(ρ_values)
