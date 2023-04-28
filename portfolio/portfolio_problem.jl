@@ -19,14 +19,17 @@ function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
     # sector-asset pair constraints
     @constraint(model, sector_asset1, model[:bin] .<= H*model[:l])# if you invest into ith asset, the corresponding sector must be chosen, took
     @constraint(model,sector_asset2, model[:l] .<= H'*model[:bin])# if you choose jth sector, there must be investment into the corresponding assets
+    # selection constraints for each asset and its binary indicator
+    @constraint(model,xplus_binary,model[:xplus] .<= M*model[:bin])
+    @constraint(model,xminus_binary,model[:xminus] .<=M*model[:bin]) 
     # lower bounds on individual variables
     @constraint(model,lxplus,-model[:xplus] .<=zeros(N))
     @constraint(model,lxminus,-model[:xminus] .<=zeros(N))
     @constraint(model,lbin,-model[:bin] .<=zeros(N))
     @constraint(model,ll,-model[:l] .<=zeros(L))
     # upper bounds on individual variables
-    @constraint(model,uxplus,model[:xplus] .<= M*model[:bin])
-    @constraint(model,uxminus,model[:xminus] .<=M*model[:bin]) 
+    @constraint(model,uxplus,model[:xplus] .<= ones(N))
+    @constraint(model,uxminus,model[:xminus] .<=ones(N)) 
     @constraint(model,ubin,model[:bin] .<=ones(N))
     @constraint(model,ul,model[:l] .<=ones(L))
     
@@ -108,10 +111,7 @@ function getData(ρ,r,Λ)
     #print("Solve_base_model in JuMP: ",solution_summary(model))
     #println("JuMP solution relaxed: ",  objective_value(model) , " using ", value.(model[:xplus]), value.(model[:xminus]), value.(model[:bin]), value.(model[:l]))
     P,q,A,b, cones= getClarabelData(model)
-    #=println("A : ", A)
-    println("b : ", b)
-    println("cones : ", cones) 
-    println("integer vars: ", binary_vars)=#
+    
     return P,q,A,b,cones, binary_vars
     
 end
@@ -149,8 +149,10 @@ V0 = 10000
 w[20]=1.0
 r=R*w =#
 
+ρ_values = [1e-4]
+ρ_values_str = ["1e-4"]
 
-
+#=
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
     r = (1/T)*ones(1,T)*R
@@ -211,10 +213,11 @@ for i in 1:lastindex(ρ_values)
 
     
 end 
-#=
+=#
+
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
-    for t in 1005:1005
+    for t in 1000:1200
         R = get_return_data(N,t) # return rates
         Λ = calc_variance(N, R)
         r = (1/t)*ones(1,t)*R
@@ -245,8 +248,7 @@ for i in 1:lastindex(ρ_values)
             println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
             error("Solutions differ!")
         end
-        println("x'Λx: ",feasible_solution'*Λ*feasible_solution)
-        
+
         println("Number of early terminated nodes: ", early_num)
 
         # count QP iterations
@@ -275,8 +277,14 @@ for i in 1:lastindex(ρ_values)
             append!(first_iter_num, fea_iter)
         end  
     end
-    #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
+    save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
 end 
-=#
+#=  A_ub = solver.data.A[end-2-N-n+1:end-2-N, :] 
+    ub = solver.data.b[end-2-N-n+1:end-2-N]
+    A_lb = solver.data.A[end-2-N-2*n+1:end-2-N-n]
+    neg_lb = solver.data.b[end-2-N-2*n+1:end-2-N-n]
+    
+    println("A0 : ", A_ub)
+    println("b0 : ", ub) =#
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)

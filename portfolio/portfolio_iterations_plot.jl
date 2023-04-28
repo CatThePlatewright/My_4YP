@@ -12,11 +12,11 @@ fig = figure()
 color_set = ["green", "orange", "black","cyan","red"]
 marker_set = ["^" "s" "D" "x"]
 
-with_iter = load("portfolio_iterations_1.jld","with_iter")
-without_iter = load("portfolio_iterations_1.jld","without_iter")
-first_iter_num = load("portfolio_iterations_1.jld","first_iter_num") 
-total_nodes = load("portfolio_iterations_1.jld","total_nodes")
-total_nodes_without = load("portfolio_iterations_1.jld","total_nodes_without")
+with_iter = load("portfolio_iterations_1e-4.jld","with_iter")
+without_iter = load("portfolio_iterations_1e-4.jld","without_iter")
+first_iter_num = load("portfolio_iterations_1e-4.jld","first_iter_num") 
+total_nodes = load("portfolio_iterations_1e-4.jld","total_nodes")
+total_nodes_without = load("portfolio_iterations_1e-4.jld","total_nodes_without")
 println(length(total_nodes))
 ind = 1000:(1000+lastindex(with_iter)-1)
 with_iter =(with_iter .- first_iter_num)

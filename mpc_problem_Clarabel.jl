@@ -156,7 +156,7 @@ for i = start_horizon:end_horizon
     #start bnb loop
     println("STARTING CLARABEL BNB LOOP ")
 
-    best_ub, feasible_solution, early_num, total_iter, fea_iter,total_nodes,fea_nodes = branch_and_bound_solve(i, solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,true,false) 
+    best_ub, feasible_solution, early_num, total_iter, fea_iter,total_nodes,fea_nodes = branch_and_bound_solve(i, solver, base_solution,n,ϵ, i_idx, true, true, true, λ,ldltS,false,false) 
 
     
     println("Termination status of Clarabel solver:" , solver.info.status)
@@ -174,8 +174,6 @@ for i = start_horizon:end_horizon
         error("Solutions differ!")
         #num_errors = num_errors +1
     end
-    
-
     # count QP iterations    
     printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
     solver_without   = Clarabel.Solver()
@@ -201,12 +199,12 @@ for i = start_horizon:end_horizon
     end
     println("Total iterations: ", total_iter, " ", total_iter_without)
     println(" ") 
-end
-save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
+
+#save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
 
 
 # dense formulation for MIMPC:
-#=    printstyled("Horizon iteration: ", i, "\n", color = :magenta)
+    printstyled("Horizon iteration: ", i, "\n", color = :magenta)
     P, q, Ã, b̃, s, i_idx,A, b, l, u, lb, ub= generate_dense_MPC_Clarabel(i)
     n = length(q)
 
@@ -226,9 +224,9 @@ save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_n
     optimize!(model2)
     uopt2 = value.(x)
     println("Gurobi base_solution: ", objective_value(model2) , " using ", uopt2) 
-    #check_flag = all(uopt1 .== uopt2)
-    #@assert(check_flag == true)
-    #printstyled("Same solution:", check_flag, "\n",color=:green)
+    check_flag = all(uopt1 .== uopt2)
+    @assert(check_flag == true)
+    printstyled("Same solution:", check_flag, "\n",color=:green)
     λ=0.99
     ϵ = 1e-6
     ldltS = nothing
@@ -292,6 +290,5 @@ save((@sprintf("mpc_sparse_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_n
 
     
 end  
-save((@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
+save((@sprintf("mimpc_iterations_N=%d_warmstart_nodomprog.jld",N)), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num,"total_nodes_without",total_nodes_without_num,"fea_nodes",fea_nodes_num,"fea_nodes_without", fea_nodes_without_num)
    
-=#

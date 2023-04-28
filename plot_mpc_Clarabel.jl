@@ -8,19 +8,19 @@ rcParams["ps.fonttype"] = 42
 color_set = ["red" "green" "orange" "black" "cyan"]
 marker_set = ["^" "s" "D" "x"]
 for n in [8]
-    with_iter = load(@sprintf("mpc_sparse_N=%d.jld",n),"with_iter")
+    #=with_iter = load(@sprintf("mpc_sparse_N=%d.jld",n),"with_iter")
     without_iter = load(@sprintf("mpc_sparse_N=%d.jld",n), "without_iter")
     first_iter_num = load(@sprintf("mpc_sparse_N=%d.jld",n), "first_iter_num")
     with_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart_new.jld",n),"with_iter")
     without_iter2 = load(@sprintf("mpc_sparse_N=%d_warmstart_new.jld",n),"without_iter")
-    first_iter_num2 = load(@sprintf("mpc_sparse_N=%d_warmstart_new.jld",n),"first_iter_num") 
+    first_iter_num2 = load(@sprintf("mpc_sparse_N=%d_warmstart_new.jld",n),"first_iter_num") =#
     
-    #= with_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n),"with_iter")
+    with_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n),"with_iter")
     without_iter = load(@sprintf("mimpc_iterations_N=%d.jld",n), "without_iter")
     first_iter_num = load(@sprintf("mimpc_iterations_N=%d.jld",n), "first_iter_num")
     with_iter2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"with_iter")
     without_iter2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"without_iter")
-    first_iter_num2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"first_iter_num")  =#
+    first_iter_num2 = load(@sprintf("mimpc_iterations_N=%d_warmstart_new.jld",n),"first_iter_num") 
     start_idx = 1
     end_idx = 100
     ind = start_idx:end_idx
