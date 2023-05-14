@@ -134,10 +134,10 @@ function evaluate_constraint(solver,x)
     #Same as:  residuals.rz_inf .=  data.b - data.A * variables.x 
     s .= solver.data.b
     mul!(s, solver.data.A, x, -1, 1) 
-    printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
+    # printstyled("Tau is : ", solver.variables.τ,"\n", color = :light_green)
 
     cone_specs = solver.cones.cone_specs
-    println(cone_specs, length(cone_specs))
+    # println(cone_specs, length(cone_specs))
     j = 1
     while j <= length(solver.data.b)
         for i in eachindex(cone_specs)
@@ -146,13 +146,13 @@ function evaluate_constraint(solver,x)
             if t == Clarabel.ZeroConeT 
                 # should all be 0 by above construction
                 if ~all(isapprox.(s[k],0,atol = 1e-7))
-                    println("ZeroConeT constraint not satisfied for s[k]: ")
+                    # println("ZeroConeT constraint not satisfied for s[k]: ")
                     return false
                 end
             else
                 z̃ = Clarabel.unit_margin(solver.cones[i],s[k],Clarabel.PrimalCone)
                 if round(z̃,digits=7) < 0 
-                    println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ")
+                    # println("NonnegativeConeT or SOC constraint not satisfied for s[k]: ")
                     return false
                 end
             end
@@ -177,14 +177,14 @@ function compute_ub(solver,n::Int, integer_vars,relaxed_vars)
     for i in integer_vars
         x[i] = round(relaxed_vars[i],digits=0) 
     end
-    println("rounded integer variables: ", x[integer_vars])
+    # println("rounded integer variables: ", x[integer_vars])
 
     if evaluate_constraint(solver,x)
         obj_val = 0.5*x'*Symmetric(P)*x + q'*x 
-        println("Valid upper bound : ", obj_val," using feasible x: ", x)
+        # println("Valid upper bound : ", obj_val," using feasible x: ", x)
         return obj_val, x
     else 
-        println("Infeasible or unbounded problem for ub computation")
+        # println("Infeasible or unbounded problem for ub computation")
         return Inf, [Inf for _ in 1:n]
     end
 end
@@ -192,24 +192,28 @@ end
 function check_lb_pruning(node, best_ub)
     #println("DEBUG node.data.lb - best_ub: ", node.data.lb, " - ", best_ub, " = ", node.data.lb - best_ub)
     if node.data.lb - best_ub >1e-5 || node.data.lb == Inf
-        println("Prune node with lower bound larger than best ub or ==INF")
+        # println("Prune node with lower bound larger than best ub or ==INF")
         node.data.is_pruned = true
         return true
     end
     return false
 end
 
-function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,total_iter::Int, fea_iter::Int, total_nodes::Int,fea_nodes::Int)
+function update_ub(u, feasible_solution, best_ub, best_feasible_solution, depth,
+    total_iter::Int, fea_iter::Int, 
+    total_time::Float64, fea_time::Float64,
+    total_nodes::Int,fea_nodes::Int)
     if (u < best_ub) # this only happens if node is not pruned
         if isinf(best_ub)
             fea_iter = total_iter
             fea_nodes = total_nodes
+            fea_time = total_time
         end
         best_ub = u
-        printstyled("FOUND BETTER UB AT DEPTH ", depth,"\n", color = :green)
+        # printstyled("FOUND BETTER UB AT DEPTH ", depth,"\n", color = :green)
         best_feasible_solution = feasible_solution
     end
-    return best_ub, best_feasible_solution, fea_iter, fea_nodes
+    return best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes
 end
 #select a leaf from leaves for computing
 function select_leaf(node_queue::Vector{BnbNode}, best_ub)

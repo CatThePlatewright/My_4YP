@@ -7,11 +7,12 @@ Simulate inverter model with ADP formulation from the paper
 # Import numpy
 import numpy as np
 import pandas as pd
-import os
 
 # Power converter model files
 # from .power_converter import Model
 from power_converter import Model
+
+
 
 # Import plotting library
 import matplotlib.pylab as plt
@@ -38,7 +39,7 @@ def run_example():
     gamma = 0.95                # Forgetting factor
     # N_adp = np.arange(1, 6)     # Horizon length
     # N_adp = np.array([2])
-    N_adp = np.array([2, 4, 6, 8])
+    N_adp = np.full((50,), 8)
     delta = 5.5                 # Switching frequency penalty
     N_tail = 50
 
@@ -108,7 +109,7 @@ def run_example():
         else:
             plot_flag = 0
 
-        stats_miosqp = model.simulate_cl(N_adp[i], flag_steady_trans, 
+        stats_miosqp = model.simulate_cl(i, N_adp[i], flag_steady_trans,
                                          solver='miosqp', plot=plot_flag)
 
         miosqp_std_time[i] = stats_miosqp.std_solve_time

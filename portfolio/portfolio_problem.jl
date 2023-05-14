@@ -1,5 +1,6 @@
 include("portfolio_bnb.jl")
 using JLD, CSV, Statistics, LinearAlgebra,Printf
+using Plots
 
 function create_variables(model,N,L)
     @variable(model,xplus[i = 1:N])
@@ -19,14 +20,17 @@ function add_constraints(model,N,L, M,K,Lmin, Lmax,ρ,Λ)
     # sector-asset pair constraints
     @constraint(model, sector_asset1, model[:bin] .<= H*model[:l])# if you invest into ith asset, the corresponding sector must be chosen, took
     @constraint(model,sector_asset2, model[:l] .<= H'*model[:bin])# if you choose jth sector, there must be investment into the corresponding assets
+    # selection constraints for each asset and its binary indicator
+    @constraint(model,xplus_binary,model[:xplus] .<= M*model[:bin])
+    @constraint(model,xminus_binary,model[:xminus] .<=M*model[:bin]) 
     # lower bounds on individual variables
     @constraint(model,lxplus,-model[:xplus] .<=zeros(N))
     @constraint(model,lxminus,-model[:xminus] .<=zeros(N))
     @constraint(model,lbin,-model[:bin] .<=zeros(N))
     @constraint(model,ll,-model[:l] .<=zeros(L))
     # upper bounds on individual variables
-    @constraint(model,uxplus,model[:xplus] .<= M*model[:bin])
-    @constraint(model,uxminus,model[:xminus] .<=M*model[:bin]) 
+    @constraint(model,uxplus,model[:xplus] .<= ones(N))
+    @constraint(model,uxminus,model[:xminus] .<=ones(N)) 
     @constraint(model,ubin,model[:bin] .<=ones(N))
     @constraint(model,ul,model[:l] .<=ones(L))
     
@@ -87,7 +91,7 @@ function solveGurobi(ρ,r, Λ)
     set_binary.(exact_model[:l])
     @objective(exact_model, Min, -sum(r[i]*(exact_model[:xplus][i] -exact_model[:xminus][i]) for i = 1:N))
     add_constraints(exact_model,N,L,M,K,Lmin,Lmax,ρ,Λ)
-    println(exact_model)
+    # println(exact_model)
 
     optimize!(exact_model)
     solution = vcat(value.(exact_model[:xplus]), value.(exact_model[:xminus]), value.(exact_model[:bin]), value.(exact_model[:l]))
@@ -142,116 +146,127 @@ total_nodes_num = Int64[]
 total_nodes_without_num = Int64[]
 asset_distribution= Float64[]
 
+days = 100
+without_time = Vector{Float64}(undef,days+1)
+with_time = Vector{Float64}(undef,days+1)
+first_time = Vector{Float64}(undef,days+1)
+first_time_without = Vector{Float64}(undef,days+1)
+
 V0 = 10000
-ρ_values = [0.015,0.012,1e-4,1e-3,1e-2,1e-1,1]# SOC constraint for risk return
-ρ_values_str = ["1.5e-2","1.2e-2","1e-4","1e-3","1e-2","1e-1","1"]
+# ρ_values = [0.015,0.012,1e-4,1e-3,1e-2,1e-1,1]# SOC constraint for risk return
+# ρ_values_str = ["1.5e-2","1.2e-2","1e-4","1e-3","1e-2","1e-1","1"]
+
+ρ_values = [1e-3]
+ρ_values_str = ["1e-3"]
 #= w = zeros(20,1)
 w[20]=1.0
 r=R*w =#
 
 
 
+# for i in 1:lastindex(ρ_values)
+#     ρ = ρ_values[i]
+#     r = (1/T)*ones(1,T)*R
+#     println("r: ",r)
+#     exact_model, exact_solution = solveGurobi(ρ,r,Λ)
+#     P,q,A,b, s, binary_vars= getData(ρ,r,Λ)
+#     println("Setting up Clarabel solver...")
+#     settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
+#     solver   = Clarabel.Solver()
+
+#     Clarabel.setup!(solver, P, q, A, b, s, settings)
+
+#     result = Clarabel.solve!(solver, Inf)
+#     println(result)
+
+#     #start bnb loop
+#     println("STARTING CLARABEL BNB LOOP ")
+#     best_ub, feasible_solution, early_num, total_iter, fea_iter, total_time, fea_time, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
+
+#     println("Termination status of Clarabel solver:" , solver.info.status)
+#     println("Found objective: ", best_ub)
+#     x_plus = feasible_solution[1:N]
+#     x_minus = feasible_solution[N+1:2*N]
+#     println("xplus: ", round.(x_plus,digits=2))
+#     println("xminus: ", round.(x_minus,digits=2))
+#     diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
+#     diff_solution=round(norm(diff_sol_vector),digits=4)
+#     diff_obj = round(best_ub-objective_value(exact_model),digits=4) # digits=5 resulted in one different solution by 2.0e-5
+#     if ~iszero(diff_obj)
+#         println("Solution diff: ",diff_solution, "--- Objective difference: ", diff_obj)
+#         println(diff_sol_vector)
+#         println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
+#         error("Solutions differ!")
+#     end
+    
+#     #= for j in 1:lastindex(x_plus)
+#         if x_plus[j]>0 && x_minus[j]>0
+#             w = min(x_minus[j],x_plus[j])
+#             x_minus[j] = x_minus[j]-w
+#             x_plus[j] = x_plus[j]-w
+#         end
+#     end  =#
+#     opt_value = - sum(r[i]*(x_plus[i] -x_minus[i]) for i = 1:N)
+
+#     println("New objective: ",opt_value)
+#     println("xplus: ", round.(x_plus,digits=2))
+#     println("xminus: ", round.(x_minus,digits=2))
+#     diff_obj = round(best_ub-opt_value,digits=4) # digits=5 resulted in one different solution by 2.0e-5
+#     @assert(diff_obj ≈ 0)
+#     if ~iszero(diff_obj)
+#         println("--- Objective difference: ", diff_obj)
+#         error("Solutions differ!")
+#     end
+#     r_solution = R*(x_plus-x_minus) 
+#     portfolio_value = portfolio_V(V0,r_solution)
+
+
+#     # save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
+
+    
+# end 
+
+start_day = 1000
 for i in 1:lastindex(ρ_values)
     ρ = ρ_values[i]
-    r = (1/T)*ones(1,T)*R
-    println("r: ",r)
-    exact_model, exact_solution = solveGurobi(ρ,r,Λ)
-    P,q,A,b, s, binary_vars= getData(ρ,r,Λ)
-    println("Setting up Clarabel solver...")
-    settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
-    solver   = Clarabel.Solver()
-
-    Clarabel.setup!(solver, P, q, A, b, s, settings)
-
-    result = Clarabel.solve!(solver, Inf)
-    println(result)
-
-    #start bnb loop
-    println("STARTING CLARABEL BNB LOOP ")
-    best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
-
-    println("Termination status of Clarabel solver:" , solver.info.status)
-    println("Found objective: ", best_ub)
-    x_plus = feasible_solution[1:N]
-    x_minus = feasible_solution[N+1:2*N]
-    println("xplus: ", round.(x_plus,digits=2))
-    println("xminus: ", round.(x_minus,digits=2))
-    diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
-    diff_solution=round(norm(diff_sol_vector),digits=4)
-    diff_obj = round(best_ub-objective_value(exact_model),digits=4) # digits=5 resulted in one different solution by 2.0e-5
-    if ~iszero(diff_obj)
-        println("Solution diff: ",diff_solution, "--- Objective difference: ", diff_obj)
-        println(diff_sol_vector)
-        println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
-        error("Solutions differ!")
-    end
-    
-    #= for j in 1:lastindex(x_plus)
-        if x_plus[j]>0 && x_minus[j]>0
-            w = min(x_minus[j],x_plus[j])
-            x_minus[j] = x_minus[j]-w
-            x_plus[j] = x_plus[j]-w
-        end
-    end  =#
-    opt_value = - sum(r[i]*(x_plus[i] -x_minus[i]) for i = 1:N)
-
-    println("New objective: ",opt_value)
-    println("xplus: ", round.(x_plus,digits=2))
-    println("xminus: ", round.(x_minus,digits=2))
-    diff_obj = round(best_ub-opt_value,digits=4) # digits=5 resulted in one different solution by 2.0e-5
-    if ~iszero(diff_obj)
-        println("--- Objective difference: ", diff_obj)
-        error("Solutions differ!")
-    end
-    r_solution = R*(x_plus-x_minus) 
-    portfolio_value = portfolio_V(V0,r_solution)
-
-
-    # save(@sprintf("portfolio_%s.jld",ρ_values_str[i]), "optimal_value", best_ub,"Vt",portfolio_value,"xplus",x_plus,"xminus",x_minus,"r_solution",r_solution)
-
-    
-end 
-#=
-for i in 1:lastindex(ρ_values)
-    ρ = ρ_values[i]
-    for t in 1005:1005
+    for t in start_day:(start_day + days)
         R = get_return_data(N,t) # return rates
         Λ = calc_variance(N, R)
         r = (1/t)*ones(1,t)*R
 
-        exact_model, exact_solution = solveGurobi(ρ,r,Λ)
+        # exact_model, exact_solution = solveGurobi(ρ,r,Λ)
         P,q,A,b, s, binary_vars= getData(ρ,r,Λ)
-        println("Setting up Clarabel solver...")
+        # println("Setting up Clarabel solver...")
         settings = Clarabel.Settings(verbose = false, equilibrate_enable = false, max_iter = 100)
         solver   = Clarabel.Solver()
 
         Clarabel.setup!(solver, P, q, A, b, s, settings)
 
         result = Clarabel.solve!(solver, Inf)
-        println(result)
+        # println(result)
 
         #start bnb loop
-        println("STARTING CLARABEL BNB LOOP ")
-        best_ub, feasible_solution, early_num, total_iter, fea_iter, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
+        # println("STARTING CLARABEL BNB LOOP ")
+        best_ub, feasible_solution, early_num, total_iter, fea_iter, total_time, fea_time, total_nodes = branch_and_bound_solve(solver, result,N,L,ϵ, binary_vars,true,true,false,λ) #want total number of vars: 2*n
 
-        println("Termination status of Clarabel solver:" , solver.info.status)
+        # println("Termination status of Clarabel solver:" , solver.info.status)
         #println("Found objective: ", best_ub, " using ", round.(feasible_solution,digits=3))
-        diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
-        diff_solution=round(norm(diff_sol_vector),digits=5)
-        diff_obj = round(best_ub-objective_value(exact_model),digits=5)
-        if ~iszero(diff_obj)
-            println("Solution diff: ",diff_solution, "--- Objective difference: ", diff_obj)
-            println(diff_sol_vector)
-            println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
-            error("Solutions differ!")
-        end
-        println("x'Λx: ",feasible_solution'*Λ*feasible_solution)
+        # diff_sol_vector= round.(feasible_solution - value.(exact_solution),digits=5)
+        # diff_solution=round(norm(diff_sol_vector),digits=5)
+        # diff_obj = round(best_ub-objective_value(exact_model),digits=5)
+        # if ~iszero(diff_obj)
+        #     println("Solution diff: ",diff_solution, "--- Objective difference: ", diff_obj)
+        #     println(diff_sol_vector)
+        #     println("index different value: ", [findall(x->x!=0,diff_sol_vector)])
+        #     error("Solutions differ!")
+        # end
+        # println("x'Λx: ",feasible_solution'*Λ*feasible_solution)
         
-        println("Number of early terminated nodes: ", early_num)
+        # println("Number of early terminated nodes: ", early_num)
 
         # count QP iterations
-        printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
-        println(" ")  
+        # printstyled("Total net iter num (with early_term_enable): ", total_iter-fea_iter, "\n", color = :green)
+        # println(" ")  
 
 
         solver_without   = Clarabel.Solver()
@@ -259,24 +274,41 @@ for i in 1:lastindex(ρ_values)
         Clarabel.setup!(solver_without, P, q, A, b,s, settings)
 
         base_solution_without = Clarabel.solve!(solver_without)
-        best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_nodes_without = branch_and_bound_solve(solver_without, base_solution_without,N,L,ϵ, binary_vars, true, false, false,λ) 
-        println("Found objective without early_term: ", best_ub_without)
-        printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
+        best_ub_without, feasible_base_solution_without, early_num_without, total_iter_without, fea_iter_without, total_time_without, fea_time_without, total_nodes_without = branch_and_bound_solve(solver_without, base_solution_without,N,L,ϵ, binary_vars, true, false, false,λ) 
+        # println("Found objective without early_term: ", best_ub_without)
+        # printstyled("Total net iter num (without): ", total_iter_without - fea_iter_without, "\n", color = :green)
 
-        println("Number of early terminated nodes (without): ", early_num_without)
-        reduction = 1 - (total_iter - fea_iter)/(total_iter_without - fea_iter_without)
-        println("Reduced iterations (percentage): ", reduction)
-        append!(without_iter_num, total_iter_without)
-        append!(with_iter_num, total_iter)
-        append!(percentage_iter_reduction, reduction)
-        append!(total_nodes_num, total_nodes)
-        append!(total_nodes_without_num, total_nodes_without)
-        if (fea_iter == fea_iter_without)
-            append!(first_iter_num, fea_iter)
-        end  
+        # println("Number of early terminated nodes (without): ", early_num_without)
+        # println("Reduced iterations (percentage): ", reduction)
+        
+        # append!(without_iter_num, total_iter_without)
+        # append!(with_iter_num, total_iter)
+
+
+        @assert total_nodes == total_nodes_without
+        @assert fea_iter == fea_iter_without
+        with_time[t-start_day+1] = total_time
+        without_time[t-start_day+1] = total_time_without
+
+        first_time[t-start_day+1] = fea_time
+        first_time_without[t-start_day+1] = fea_time_without
     end
-    #save(@sprintf("portfolio_iterations_%s.jld",ρ_values_str[i]), "with_iter", with_iter_num, "without_iter", without_iter_num, "first_iter_num", first_iter_num, "percentage", percentage_iter_reduction, "total_nodes", total_nodes_num, "total_nodes_without", total_nodes_without_num)
 
+    total_time = (with_time - first_time)*1e3               #change metric from s to ms
+    total_time_without = (without_time - first_time_without)*1e3
+    
+    percentage_with_time = total_time ./ total_time_without
+    percentage_without_time = ones(Float64,length(percentage_with_time))
+
+    ind = 0:days
+    Plots.plot(ind,[percentage_with_time percentage_without_time], seriestype=[:steppost :steppost], label = ["Early termination" "No early termination"], color = ["red" "black"])
+    # Plots.plot(ind,[percentage percentage_time], seriestype=[:steppost :steppost], label = ["iter" "total_time"], color = ["black" "red"])
+
+    save(@sprintf("portfolio_time_%s.jld",ρ), "ind", ind, "total_time", total_time, "total_time_without", total_time_without, "first_time", first_time, "percentage_with_time", percentage_with_time, "percentage_without_time", percentage_without_time)
+
+    ylabel!("Ratio")
+    xlabel!("Intervals")
+    savefig(@sprintf("yc_socp_time_%s.pdf",string(ρ)))
 end 
-=#
+
 printstyled("COPY AND SAVE DATA AND IMAGES UNDER DIFFERENT NAMES\n",color = :red)

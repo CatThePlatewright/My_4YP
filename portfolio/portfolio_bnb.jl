@@ -1,4 +1,5 @@
 using SparseArrays
+using TimerOutputs
 include("../mixed_binary_solver.jl")
 include("../toy_problems/toy_bnb.jl")
 """ important change for SOC problem:
@@ -30,15 +31,20 @@ end
 function solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start::Bool, N, λ,  prev_x, prev_z, prev_s)
     # CRUCIAL: reset the solver info (termination status) and the solver variables when you use the same solver to solve an updated problem
     #reset_solver!(solver) 
-    result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, nothing,true, λ, prev_x, prev_z, prev_s,N)
-
+    if early_term_enable    #use 1 as the simple correction
+        result = Clarabel.solve!(solver, best_ub, Int(1), warm_start, nothing,false, λ, prev_x, prev_z, prev_s, N) 
+    else
+        result = Clarabel.solve!(solver, best_ub, Int(0), warm_start, nothing,false, λ, prev_x, prev_z, prev_s, N) 
+    end
+    
     return result
 end
 
 " return the lower bound as well as the values of x computed (for use by compute_ub()).
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
-function compute_lb_new(solver, n::Int, N::Int, L::Int,fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,total_iter::Int, early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing, total_nodes = Nothing)
+function compute_lb_new(solver, n::Int, N::Int, L::Int,fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int,
+    total_iter::Int, total_time::Float64, early_term_enable::Bool, warm_start::Bool, λ, prev_x= Nothing, prev_z=Nothing, prev_s = Nothing, total_nodes = Nothing)
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
         #relax all integer variables before adding branching bounds specific to this node
@@ -50,17 +56,21 @@ function compute_lb_new(solver, n::Int, N::Int, L::Int,fixed_x_indices, fix_x_va
     solution = solve_in_Clarabel(solver, best_ub, early_term_enable, warm_start,N,λ, prev_x, prev_z, prev_s)
     total_iter += solver.info.iterations
     total_nodes += 1
+    fact_time = TimerOutputs.time(solver.timers["solve!"]["IP iteration"]["kkt update"])/1e9
+    solve_time = TimerOutputs.time(solver.timers["solve!"]["IP iteration"]["kkt solve"])/1e9
+    total_time += fact_time + solve_time
+
     if isnothing(solution)
         early_num = early_num+ 1
-        printstyled("Node early termination, increase counter by 1 \n", color = :red)
-        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_nodes
+        # printstyled("Node early termination, increase counter by 1 \n", color = :red)
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_time, total_nodes
     end
     if solution.status== Clarabel.SOLVED
-        println("Values of relaxed solution ", solution.x)
-        return solution.obj_val, solution.x, solution.z, solution.s, early_num, total_iter, total_nodes
+        # println("Values of relaxed solution ", solution.x)
+        return solution.obj_val, solution.x, solution.z, solution.s, early_num, total_iter, total_time, total_nodes
     else 
-        println("Infeasible or early terminated relaxed problem")
-        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_nodes
+        # println("Infeasible or early terminated relaxed problem")
+        return Inf, [Inf for _ in 1:n],[Inf for _ in 1:n],[Inf for _ in 1:n], early_num, total_iter, total_time, total_nodes
     end
 end
 
@@ -75,6 +85,8 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
     max_nb_nodes = 500
     total_iter = 0
     total_nodes = 0
+    total_time = zero(Float64)
+    fea_time = zero(Float64)
     fea_iter = 0
     if base_solution.status == Clarabel.SOLVED
         lb = base_solution.obj_val
@@ -94,43 +106,43 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
     # 3) start branching
     while ~isempty(node_queue) 
         if length(node_queue) >= max_nb_nodes
-            printstyled("MAXIMUM NUMBER OF NODES REACHED \n",color = :red)
+            # printstyled("MAXIMUM NUMBER OF NODES REACHED \n",color = :red)
             break
         end 
-        println(" ")
-        println("Node queue length : ", length(node_queue))
+        # println(" ")
+        # println("Node queue length : ", length(node_queue))
         # pick and remove node from node_queue
         node = select_leaf(node_queue, best_ub)
         #node = splice!(node_queue,argmin(n.data.lb for n in node_queue))
 
-        println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
+        # println("Difference between best ub: ", best_ub, " and best lb ",node.data.lb, " is ",best_ub - node.data.lb ) 
         if best_ub - node.data.lb <= ϵ
             break
         end
-        printstyled("Best ub: ", best_ub, " with feasible solution : ", round.(best_feasible_solution,digits=2),"\n",color= :green)
+        # printstyled("Best ub: ", best_ub, " with feasible solution : ", round.(best_feasible_solution,digits=2),"\n",color= :green)
         #println("current node at depth ", node.data.depth, " has data.solution as ", node.data.solution_x)
 
         #IMPORTANT: the x should NOT change after solving in compute_lb_new or compute_ub -> use broadcasting
         x .= node.data.solution_x
         if x != node.data.solver.solution.x
-            printstyled("x is not equal to solver.solution.x\n",color= :red)
+            # printstyled("x is not equal to solver.solution.x\n",color= :red)
         end
         # heuristic guessing for fractional solution: which edge to split along i.e. which variable to fix next? 
         fixed_x_index = pick_index(x, integer_vars, node.data.fixed_x_ind,false) 
-        println("GOT BRANCHING VARIABLE: ", fixed_x_index)
+        # println("GOT BRANCHING VARIABLE: ", fixed_x_index)
         ceil_value = 1.0
         floor_value = 0.0
         fixed_x_indices = vcat(node.data.fixed_x_ind, fixed_x_index)
         # left branch always fixes the next variable to closest lower integer
         fixed_x_left = vcat(node.data.fixed_x_values, floor_value) 
         upper_or_lower_vec_left = vcat(node.data.upper_or_lower_vec, 1)
-        println("fixed_x_left: ", fixed_x_left)
+        # println("fixed_x_left: ", fixed_x_left)
 
         # solve the left child problem with 1 more fixed variable, getting l-tilde and u-tilde
         left_solver = node.data.solver  
         #NOTE: if early terminated node, compute_lb_new returns Inf,Inf then check_lb_pruning prunes this node
-        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_nodes = compute_lb_new(left_solver, n,N,L,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter, early_term_enable, warm_start, λ,  x, node.data.solution_z, node.data.solution_s, total_nodes) 
-        println("solved for l̃: ", l̃)
+        l̃, relaxed_x_left, z_left,s_left, early_num, total_iter, total_time, total_nodes = compute_lb_new(left_solver, n,N,L,fixed_x_indices, fixed_x_left, integer_vars, upper_or_lower_vec_left, best_ub, early_num, total_iter,total_time, early_term_enable, warm_start, λ,  x, node.data.solution_z, node.data.solution_s, total_nodes) 
+        # println("solved for l̃: ", l̃)
         #create new child node (left)
         left_node = leftchild!(node, ClarabelNodeData(left_solver, relaxed_x_left,z_left,s_left, fixed_x_indices, fixed_x_left, upper_or_lower_vec_left, l̃)) 
         # prune node if l̄ > current ub or if l̄ = Inf
@@ -140,20 +152,20 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         # only perform upper bound calculation if not pruned:
         if ~left_node.data.is_pruned
             ũ, feasible_x_left = compute_ub(left_solver, n,integer_vars,relaxed_x_left)
-            println("Left node, solved for ũ: ", ũ)
-            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter, total_nodes,fea_nodes)
+            # println("Left node, solved for ũ: ", ũ)
+            best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes = update_ub(ũ, feasible_x_left, best_ub, best_feasible_solution, left_node.data.depth,total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes)
             push!(node_queue,left_node)
         end
         #println("DEBUG... fixed indices on left branch are : ", fixed_x_indices, " to fixed_x_left ", fixed_x_left)
-        println(" ")
+        # println(" ")
         
         # solve the right child problem to get l-bar and u-bar
         right_solver = node.data.solver
         fixed_x_right = vcat(node.data.fixed_x_values, -ceil_value) # NOTE: set to negative sign due to -x[i] + s = -b[i] if we want lower bound on x[i]
         upper_or_lower_vec_right = vcat(node.data.upper_or_lower_vec, -1)
-        println("fixed_x_right: ", ceil(x[fixed_x_index]))
-        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_nodes = compute_lb_new(right_solver,n,N,L, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter, early_term_enable, warm_start,λ, x, node.data.solution_z, node.data.solution_s, total_nodes)
-        println("solved for l̄: ", l̄)
+        # println("fixed_x_right: ", ceil(x[fixed_x_index]))
+        l̄, relaxed_x_right, z_right, s_right, early_num, total_iter, total_time, total_nodes = compute_lb_new(right_solver,n,N,L, fixed_x_indices, fixed_x_right, integer_vars,upper_or_lower_vec_right, best_ub, early_num, total_iter,total_time, early_term_enable, warm_start,λ, x, node.data.solution_z, node.data.solution_s, total_nodes)
+        # println("solved for l̄: ", l̄)
         #create new child node (right)
         right_node = rightchild!(node, ClarabelNodeData(right_solver, relaxed_x_right, z_right, s_right, fixed_x_indices,fixed_x_right, upper_or_lower_vec_right, l̄))
         if pruning_enable
@@ -162,8 +174,8 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         # only perform upper bound calculation if not pruned:
         if ~right_node.data.is_pruned
             ū, feasible_x_right = compute_ub(right_solver, n,integer_vars,relaxed_x_right)
-            println("Right node, solved for ū: ", ū)
-            best_ub, best_feasible_solution, fea_iter,fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter,total_nodes,fea_nodes)
+            # println("Right node, solved for ū: ", ū)
+            best_ub, best_feasible_solution, fea_iter, fea_time, fea_nodes = update_ub(ū, feasible_x_right, best_ub, best_feasible_solution, right_node.data.depth,total_iter, fea_iter, total_time, fea_time, total_nodes,fea_nodes)
             push!(node_queue,right_node)
         end
         #println("DEBUG... fixed indices on right branch are : ", fixed_x_indices, " to ", fixed_x_right)        
@@ -171,14 +183,14 @@ function branch_and_bound_solve(solver, base_solution, N::Int, L::Int, ϵ, integ
         ind = 1
         while ind ≤ lastindex(node_queue)
             if check_lb_pruning(node_queue[ind],best_ub)
-                printstyled("Fathom node in queue with lb > U!\n", color = :red)
+                # printstyled("Fathom node in queue with lb > U!\n", color = :red)
                 deleteat!(node_queue,ind)
             end
             ind += 1
         end
         iteration += 1
-        println("iteration : ", iteration)
+        # println("iteration : ", iteration)
     end
     
-    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, total_nodes
+    return best_ub, best_feasible_solution, early_num,total_iter, fea_iter, total_time, fea_time, total_nodes
 end

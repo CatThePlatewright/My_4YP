@@ -3,6 +3,7 @@ import numpy.linalg as nla
 import scipy.linalg as sla
 import math
 import utils
+import random
 
 # Import progress bar
 from tqdm import tqdm
@@ -279,13 +280,18 @@ class Params(object):
         """
 
         # Resistance
-        Rs = 0.0108  # Stator
-        Rr = 0.0091  # Rotor
+        # Rs = 0.0108  # Stator
+        # Rr = 0.0091  # Rotor
+        Rs = random.uniform(0.005, 0.02)      #YC: for random testing
+        Rr = random.uniform(0.005, 0.02)
 
         # Inductances
-        Xls = 0.1493  # Stator
-        Xlr = 0.1104  # Rotor
-        Xm = 2.3489   # Mutual
+        # Xls = 0.1493  # Stator
+        # Xlr = 0.1104  # Rotor
+        # Xm = 2.3489   # Mutual
+        Xls = random.uniform(0.05, 0.2)  # Stator
+        Xlr = random.uniform(0.05, 0.2)  # Rotor
+        Xm = random.uniform(2, 3)   # Mutual
 
         # Rotor speed
         omegar = 0.9911  # Nominal speed
@@ -590,7 +596,7 @@ class Model(object):
                           max_solve_time, min_solve_time,
                           avg_solve_time, std_solve_time)
 
-    def simulate_cl(self, N, steady_trans, solver='gurobi', plot=False):
+    def simulate_cl(self, ind, N, steady_trans, solver='gurobi', plot=False):
         """
         Perform closed loop simulation
         """
@@ -614,7 +620,7 @@ class Model(object):
         T_timing = self.time.T_timing
 
         # Compute QP matrices
-        self.qp_matrices = MIQP(self.dyn_system, N, self.tail_cost)
+        self.qp_matrices = MIQP(self.dyn_system, ind, N, self.tail_cost)
 
         # Preallocate vectors of results
         X = np.zeros((nx, T_final + 1))
@@ -682,13 +688,13 @@ class Model(object):
         ######################################
         # YC: Save data for my use
         ######################################
-        filename_1 = 'results/adaptive_denseMPC_N=' + str(N) + '.npz'
-        filename_2 = 'results/fixed_denseMPC_N=' + str(N) + '.npz'
+        filename_1 = 'results/adaptive_denseMPC_N=' + str(N) + '_' + str(ind) + '_' + '.npz'
+        filename_2 = 'results/fixed_denseMPC_N=' + str(N) + '_' + str(ind) + '_' + '.npz'
 
         np.savez(filename_1, q = dense_adaptive_q, u = dense_adaptive_u)
         np.savez(filename_2, P = self.qp_matrices.P.todense(), A = self.qp_matrices.A.todense(), i_idx = self.qp_matrices.i_idx, i_l = self.qp_matrices.i_l, i_u = self.qp_matrices.i_u, l = self.qp_matrices.l)
 
-        filename_3 = 'results/adaptive_sparseMPC_N=' + str(N) + '.npz'
+        filename_3 = 'results/adaptive_sparseMPC_N=' + str(N) + '_' + str(ind) + '_' + '.npz'
 
 
         np.savez(filename_3, x0 = X)

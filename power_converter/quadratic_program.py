@@ -8,7 +8,7 @@ class MIQP(object):
     """
     Mixed-Integer Quadratic Program matrices and vectors
     """
-    def __init__(self, dyn_system, N, tail_cost):
+    def __init__(self, dyn_system, ind, N, tail_cost):
         """
         Generate matrices in for QP solvers
         """
@@ -91,7 +91,7 @@ class MIQP(object):
         ##########################################
         # YC: save data for MPC
         ##########################################
-        filename_4 = 'results/fixed_sparseMPC_N=' + str(N) + '.npz'
+        filename_4 = 'results/fixed_sparseMPC_N=' + str(N) + '_' + str(ind) + '_' + '.npz'
         np.savez(filename_4, A = A, B = B, C = C, P0 = P0, q0 = q0, r0 = r0, gamma = gamma, \
                  S = S, R = R, F = F)
 
