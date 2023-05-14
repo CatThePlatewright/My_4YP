@@ -119,9 +119,9 @@ num_errors = 0
 repeat_time = 5
 num_sample = 1
 
-warm_start = true
+warm_start = true       #whether warm-start
 debug_print = false
-sparsity = "sparse"
+sparsity = "sparse"     #choose whether we test on 'dense' or 'sparse' problems
 
 
 # Optimality data
