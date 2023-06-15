@@ -127,7 +127,7 @@ end
 model is given with relaxed constraints. fix_x_values is the vector of the
 variables of fixed_x_indices that are currently fixed to a boolean"
 function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, upper_or_lower_vec, best_ub, early_num::Int, 
-    total_iter::Int, total_time::Float64, early_term_enable::Int, warm_start::Bool, λ, luS,prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false,dom_prog_enable::Bool=false, total_nodes=Nothing)
+    total_iter::Int, total_time::Float64, early_term_enable::Bool, warm_start::Bool, λ, luS,prev_x= Nothing, prev_z=Nothing, prev_s = Nothing,debug_print::Bool=false,dom_prog_enable::Bool=false, total_nodes=Nothing)
     A = solver.data.A
     b = solver.data.b # so we modify the data field vector b directly, not using any copies of it
     if ~isnothing(fixed_x_indices)
@@ -174,7 +174,7 @@ function compute_lb(solver, n::Int, fixed_x_indices, fix_x_values,integer_vars, 
 end
 
 
-function solve_in_Clarabel(solver, best_ub, early_term_enable::Int, warm_start::Bool,λ, prev_x, prev_z, prev_s,luS, debug_print::Bool)
+function solve_in_Clarabel(solver, best_ub, early_term_enable::Bool, warm_start::Bool,λ, prev_x, prev_z, prev_s,luS, debug_print::Bool)
     result = Clarabel.solve!(solver, best_ub, early_term_enable, warm_start, luS, debug_print,λ, prev_x, prev_z, prev_s)
     # println("node cost is ", solver.solution.obj_val)
     return result
@@ -311,7 +311,7 @@ function select_leaf(node_queue::Vector{BnbNode}, best_ub)
     end
 end
 """ base_solution is the first solution to the relaxed problem"""
-function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Int=0, warm_start::Bool = false, λ=0.0,luS = Nothing, debug_print::Bool = false, dom_prog_enable::Bool=false)
+function branch_and_bound_solve(horizon_i, solver, base_solution, n, ϵ, integer_vars=collect(1:n),pruning_enable::Bool=true, early_term_enable::Bool=true, warm_start::Bool = false, λ=0.0,luS = Nothing, debug_print::Bool = false, dom_prog_enable::Bool=false)
     #initialise global best upper bound on objective value and corresponding feasible solution (integer)
     best_ub = Inf 
     early_num = 0

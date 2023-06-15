@@ -315,11 +315,12 @@ for t = 1:repeat_time
             luS = nothing
         end
 
-        if sparsity == "sparse"
-            early_termination_cold = Int(2)     #optimization correction for the sparse form
-        else
-            early_termination_cold = Int(1)     #Simple correction for the dense form
-        end
+        # if sparsity == "sparse"
+        #     early_termination_cold = Int(2)     #optimization correction for the sparse form
+        # else
+        #     early_termination_cold = Int(1)     #Simple correction for the dense form
+        # end
+        early_termination_cold = true
         best_ub_cold, feasible_solution_cold, early_num_cold, total_iter_cold, fea_iter_cold, total_time_cold, fea_time_cold, total_fact_time_cold, fea_fact_time_cold, total_solve_time_cold, fea_solve_time_cold, total_nodes_cold,fea_nodes_cold = branch_and_bound_solve(i, solver_cold, base_solution_cold,n,ϵ, i_idx, true, early_termination_cold, warm_start, λ,luS,debug_print,false) 
 
         if sparsity == "sparse"
@@ -362,7 +363,7 @@ for t = 1:repeat_time
         
         base_solution_without_cold = Clarabel.solve!(solver_without_cold)
 
-        early_termination = Int(0)
+        early_termination = false
         best_ub_without_cold, feasible_solution_without_cold, early_num_without_cold, total_iter_without_cold, fea_iter_without_cold, total_time_without_cold, fea_time_without_cold, total_fact_time_without_cold, fea_fact_time_without_cold, total_solve_time_without_cold, fea_solve_time_without_cold, total_nodes_without_cold,fea_nodes_without_cold = branch_and_bound_solve(i,solver_without_cold, base_solution_without_cold,n,ϵ, i_idx, true, early_termination, warm_start,λ,luS,debug_print,false) 
         
         if sparsity == "sparse"

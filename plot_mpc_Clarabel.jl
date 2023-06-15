@@ -20,7 +20,7 @@ function plot_mpc(n::Int,sparsity)
 
     fig1 = subplot(211)
     p1, = fig1.step(ind, total_time, color= "black", label = "No early termination", markersize = 4, markevery = 1)
-    p2, = fig1.step(ind, total_time_without, color= "red", label = "With arly termination", markersize = 4, markevery = 1)
+    p2, = fig1.step(ind, total_time_without, color= "red", label = "With early termination", markersize = 4, markevery = 1)
 
     ylabel("Time (ms)")
     xlim([0,100])
