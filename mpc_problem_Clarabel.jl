@@ -121,7 +121,7 @@ num_sample = 1
 
 warm_start = true       #whether warm-start
 debug_print = false
-sparsity = "sparse"     #choose whether we test on 'dense' or 'sparse' problems
+sparsity = "dense"     #choose whether we test on 'dense' or 'sparse' problems
 
 
 # Optimality data
@@ -195,7 +195,7 @@ end
 #@assert(check_flag == true)
 #printstyled("Same solution:", check_flag, "\n",color=:green)
 λ=0.99
-ϵ = 1e-6
+ϵ = 1e-8
 
 #Important data saving
 iter_num_without = Matrix{Int64}(undef,num_time,repeat_time)
@@ -453,13 +453,14 @@ with_solve_time_cold = mean(with_solve_time_cold, dims = 2)
 ################################################################
 # Plot ratio reduction
 ################################################################
-
-# percentage = (with_iter_num_cold .- first_iter_num_cold) ./(iter_num_without_cold .- first_iter_num_cold)
-# for i = 1:lastindex(percentage)
-#     if isnan(percentage[i])
-#         percentage[i] = 1.0
-#     end
-# end
+total_num = with_iter_num_cold .- first_iter_num_cold
+total_num_without = iter_num_without_cold .- first_iter_num_cold
+percentage_with_num_cold = total_num ./ total_num_without
+for i = 1:lastindex(percentage_with_num_cold)
+    if isnan(percentage_with_num_cold[i])
+        percentage_with_num_cold[i] = 1.0
+    end
+end
 
 # #early termination with warm start
 # percentage_with_time = (with_time .- first_time) ./(without_time_cold .- first_time_without_cold)
@@ -496,6 +497,9 @@ ind = 0:(end_horizon - start_horizon)
 save(@sprintf("mpc_%s_N=%d.jld",sparsity,N), "percentage_ratio", percentage_with_time_cold, 
                                                 "total_time", total_time_cold,
                                                 "total_time_without", total_time_without_cold,
+                                            "percentage_with_num_cold", percentage_with_num_cold,
+                                            "total_num", total_num,
+                                            "total_num_without", total_num_without,
                                                 "ind", ind
                                                 )
 
