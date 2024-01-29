@@ -21,10 +21,10 @@ function plot_mpc(n::Int,sparsity)
     PyPlot.clf()
     fig = figure()
 
-
+    #Time plot
     fig1 = subplot(211)
-    p1, = fig1.step(ind, total_time, color= "black", label = "No early termination", markersize = 4, markevery = 1)
-    p2, = fig1.step(ind, total_time_without, color= "red", label = "With early termination", markersize = 4, markevery = 1)
+    p1, = fig1.step(ind, total_time_without, color= "black", label = "No early termination", markersize = 4, markevery = 1)
+    p2, = fig1.step(ind, total_time, color= "red", label = "With early termination", markersize = 4, markevery = 1)
 
     ylabel("Time (ms)")
     xlim([0,100])
@@ -32,6 +32,7 @@ function plot_mpc(n::Int,sparsity)
 
     fig1.legend(handles = [p1, p2],loc="upper left")
 
+    #Iteration plot
     fig2 = subplot(212)
     fig2.step(ind, ones(length(ind)), color= "black", )
     fig2.step(ind, percentage, color= "red")
@@ -48,8 +49,8 @@ function plot_mpc(n::Int,sparsity)
 
 
     fig1 = subplot(211)
-    p1, = fig1.step(ind, total_num, color= "black", label = "No early termination", markersize = 4, markevery = 1)
-    p2, = fig1.step(ind, total_num_without, color= "red", label = "With early termination", markersize = 4, markevery = 1)
+    p1, = fig1.step(ind, total_num_without, color= "black", label = "No early termination", markersize = 4, markevery = 1)
+    p2, = fig1.step(ind, total_num, color= "red", label = "With early termination", markersize = 4, markevery = 1)
 
     ylabel("# IPM iterations")
     xlim([0,100])
